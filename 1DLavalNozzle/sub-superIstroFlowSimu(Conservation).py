@@ -16,7 +16,7 @@ def BCSet(U1, U2, U3, A,gamma):
     # inlet
     U1[0] = A[0]   #fix rho
     U2[0] = 2*U2[1] - U2[2] #interplot
-    U3[0] = U1[0]*(1/(gamma-1)+gamma/2*np.square(U2[0]/U1[0]))
+    U3[0] = U1[0]*(1/(gamma-1)+gamma/2*np.square(U2[0]/U1[0]))  #T=1
     # outlet
     U1[len(U1) - 1] = 2 * U1[len(U1) - 2] - U1[len(U1) - 3]
     U2[len(U2) - 1] = 2 * U2[len(U2) - 2] - U2[len(U2) - 3]
@@ -28,6 +28,8 @@ def fluxVariablesSet(U1, U2, U3, gamma):
     F1 = U2
     F2 = np.square(U2)/U1 + (gamma-1)/gamma*(U3 - gamma/2*np.square(U2)/U1)
     F3 = gamma*U2*U3/U1 - gamma*(gamma-1)/2*(U2**3)/np.square(U1)
+
+    #tmp = gamma*round(U2[14],3)*round(U3[14],3)/round(U1[14],3) - gamma*(gamma-1)/2*(round(U2[14],3)**3)/np.square(round(U1[14],3))
 
     return F1, F2, F3
 
@@ -44,9 +46,9 @@ def init():
     def parameterInput():
         gamma = 1.4
         Courant = 0.5
-        residual = np.zeros(1400, dtype=float) #time step number and residual collection
+        tStepNumb = 1400 #time step number and residual collection
 
-        return gamma, Courant, residual
+        return gamma, Courant, tStepNumb
 
     def originalVariablesInit():
         x = np.linspace(0,3,31)
@@ -79,33 +81,42 @@ def init():
         u1 = 0.59/(rho*A)
         return rho, u1, T
 
-    gamma, Courant, residual = parameterInput()
+    gamma, Courant, tStepNumb = parameterInput()
     x, A, rho, T = originalVariablesInit()
     rho, u1, T = flowFieldInit(x, rho, T)
 
-    U1, U2, U3  = conservVariablesInit(rho, A, u1, T, gamma)
+    U1, U2, U3 = conservVariablesInit(rho, A, u1, T, gamma)
 
-    return x, A, U1, U2, U3, gamma, Courant, residual
+    return x, A, U1, U2, U3, gamma, Courant, tStepNumb
 
-def tscheme(x, A, U1, U2 ,U3, Courant, gamma, totalt):
+def tscheme(x, A, U1, U2 ,U3, Courant, gamma):
     # MacCormack scheme
     rho, u1, T = originalVariables(U1, U2, U3, A, gamma)
-    dt = np.min(Courant * (x[1] - x[0]) / (u1 + np.sqrt(T)))
+    dt = np.min(Courant * (x[1] - x[0]) / (u1 + np.sqrt(T)))#0.0267#
     dtdx = dt /(x[1] - x[0])
-    totalt += dt
+    # dt = Courant * (x[1] - x[0]) / (u1 + np.sqrt(T))
+    # dtdx = dt / (x[1] - x[0])
 
-    F1, F2, F3 = fluxVariablesSet(U1, U2, U3, gamma)
+    def preStep(U1, U2, U3, dtdx, rho, T):
 
-    def preStep(U1, U2, U3, F1, F2, F3, dtdx):
+        F1, F2, F3 = fluxVariablesSet(U1, U2, U3, gamma)
 
         preU1 = np.zeros_like(U1)
         preU2 = np.zeros_like(U2)
         preU3 = np.zeros_like(U3)
+        tmpJ2 = np.zeros_like(U2)
+        tmpJ22 = np.zeros_like(U2)
 
         for i in range(1, len(preU1) - 1):
-            preU1[i] = U1[i] - dtdx * (F1[i + 1] - F1[i])
-            preU2[i] = U2[i] - dtdx * ((F2[i + 1] - F2[i]) + (gamma-1)/gamma*(U3[i] - gamma/2 * U2[i]**2/U1[i]) * (np.log(A[i+1] - np.log(A[i]))))
-            preU3[i] = U3[i] - dtdx * (F3[i + 1] - F3[i])
+            preU1[i] = U1[i] + dtdx * -(F1[i + 1] - F1[i])
+
+            # original form
+            tmpJ2[i] = 1/gamma * rho[i] * T[i] * (A[i+1] - A[i])
+            # conservative form
+            tmpJ22[i] = (gamma-1)/gamma * (U3[i] - gamma/2 * np.square(U2[i])/U1[i]) * (np.log(A[i+1]) - np.log(A[i]))
+
+            preU2[i] = U2[i] + dtdx * (-(F2[i + 1] - F2[i]) + tmpJ2[i])
+            preU3[i] = U3[i] + dtdx * (-(F3[i + 1] - F3[i]))
 
         preU1, preU2, preU3 = BCSet(preU1, preU2, preU3, A, gamma)
 
@@ -116,17 +127,26 @@ def tscheme(x, A, U1, U2 ,U3, Courant, gamma, totalt):
 
         return preU1, preU2, preU3
 
-    def correctionStep(U1, U2, U3, F1, F2, F3, dtdx):
+    def correctionStep(U1, U2, U3, dtdx, rho, T):
+
+        F1, F2, F3 = fluxVariablesSet(U1, U2, U3, gamma)
 
         corrU1 = np.zeros_like(U1)
         corrU2 = np.zeros_like(U2)
         corrU3 = np.zeros_like(U3)
+        tmpJ2  = np.zeros_like(U2)
+        tmpJ22 = np.zeros_like(U2)
 
         for i in range(1, len(corrU1) - 1):
-            corrU1[i] = U1[i] - dtdx * (F1[i] - F1[i - 1])
-            corrU2[i] = U2[i] - dtdx * ((F2[i] - F2[i - 1]) + (gamma - 1) / gamma * (U3[i] - gamma / 2 * U2[i] ** 2 / U1[i]) * (
-                np.log(A[i] - np.log(A[i - 1]))))
-            corrU3[i] = U3[i] - dtdx * (F3[i] - F3[i - 1])
+            corrU1[i] = U1[i] + dtdx * (-(F1[i] - F1[i - 1]))
+
+            # original form
+            tmpJ2[i] = 1/gamma * rho[i] * T[i] * (A[i] - A[i-1])
+            # conservative form
+            tmpJ22[i] = (gamma-1)/gamma*(U3[i] - gamma/2 * np.square(U2[i])/U1[i]) * (np.log(A[i]) - np.log(A[i-1]))
+
+            corrU2[i] = U2[i] + dtdx * (-(F2[i] - F2[i - 1]) + tmpJ2[i])
+            corrU3[i] = U3[i] + dtdx * (-(F3[i] - F3[i - 1]))
 
         corrU1, corrU2, corrU3 = BCSet(corrU1, corrU2, corrU3, A, gamma)
 
@@ -137,51 +157,58 @@ def tscheme(x, A, U1, U2 ,U3, Courant, gamma, totalt):
 
         return corrU1, corrU2, corrU3
 
-    preU1, preU2, preU3 = preStep(U1, U2, U3, F1, F2, F3, dtdx)
-    corrU1, corrU2, corrU3 = correctionStep(preU1, preU2, preU3, F1, F2, F3, dtdx)
+    preU1, preU2, preU3 = preStep(U1, U2, U3, dtdx, rho, T)
 
-    newU1 = (corrU1 + U1)*0.5
-    newU2 = (corrU2 + U2)*0.5
-    newU3 = (corrU3 + U3)*0.5
+    preRho, preu1, preT = originalVariables(preU1, preU2, preU3, A, gamma)
+    corrU1, corrU2, corrU3 = correctionStep(preU1, preU2, preU3, dtdx, preRho, preT)
 
-    residual = np.max([np.max(newU1 - U1),np.max(newU2 - U2),np.max(newU3 - U3)])/dt
-
-    U1 = newU1
-    U2 = newU2
-    U3 = newU3
+    U1 = (corrU1 + U1)*0.5
+    U2 = (corrU2 + U2)*0.5
+    U3 = (corrU3 + U3)*0.5
 
     #BC still error
     U1, U2, U3 = BCSet(U1, U2, U3, A,gamma)
 
-    return U1, U2, U3, residual, totalt
+    return U1, U2, U3, dt
 
-# def postProgress(rho, u1, T, residual):
-#
-#     def printData():
-#         p = rho*T
-#         Ma = u1/np.sqrt(T)
-#
-#         print("ρ:", rho)
-#         print("u1:", u1)
-#         print("T:", T)
-#         print("p", p)
-#         print("Ma", Ma)
-#         return
-#
-#     printData()
-#
-#     # print("residual:", residual)
-#     return 0
+def postProgress(U1, U2, U3, A, gamma, timeStepNumb, totalt):
+
+    def printData():
+        rho, u1, T = originalVariables(U1, U2, U3, A, gamma)
+        p = rho*T
+        Ma = u1/np.sqrt(T)
+
+        print("------------solve complete.------------")
+        print("iteration or temporal advancement times:", timeStepNumb)
+        print("total physical time:", totalt)
+        print("---------------------------------------")
+        print("ρ:", rho)
+        print("u1:", u1)
+        print("T:", T)
+        print("p", p)
+        print("Ma", Ma)
+        return
+
+    printData()
+
+    # print("residual:", residual)
+    return 0
 
 def main():
 
-    x, A, U1, U2, U3, gamma, Courant, residual = init()
+    x, A, U1, U2, U3, gamma, Courant, tStepNumb = init()
     totalt = 0
-    for t in range(len(residual)):
-        U1, U2, U3, R, totalt = tscheme(x, A, U1, U2 ,U3, Courant, gamma, totalt)
-        residual[t] = R
+    residual = np.array([],dtype=float)
+    for t in range(tStepNumb):
+        newU1, newU2, newU3, dt = tscheme(x, A, U1, U2 ,U3, Courant, gamma)
 
-    # postProgress(rho, u1, T, residual)
+        R = np.max([np.max(newU1 - U1), np.max(newU2 - U2), np.max(newU3 - U3)]) / dt
+        residual = np.append(R,residual)
+
+        U1, U2, U3 = newU1, newU2, newU3
+        totalt += dt
+        if t == tStepNumb-1:
+            postProgress(U1, U2, U3, A, gamma, tStepNumb, totalt)
 
     return 0
 
