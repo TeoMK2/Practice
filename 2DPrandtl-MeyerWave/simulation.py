@@ -43,52 +43,48 @@ def fluxVariablesSet(F1, F2, F3, F4, rho, gamma):
 
     return G1, G2, G3, G4
 
-def originalVariables(U1, U2, U3, A, gamma):
+def originalVariables(F1, F2, F3, F4, gamma, R):
 
-    #TODO:通过守恒变量求解原始变量
+    A = F3**2/(2*F1) - F4
+    B = gamma/(gamma-1)*F1*F2
+    C = -(gamma+1)/(2-gamma-1)*F1**3
+    rho = (-B + np.sqrt(B**2 - 4*A*C))/(2*A)
+    u1 = F1/rho
+    u2 = F3/F1
+    p = F2 - F1*u1
+    T = p/(rho*R)
 
-    rho = 0#U1/A
-    u1 = 0#U2/U1
-    T = 0#(gamma-1)*(U3/U1 - gamma/2*np.square(u1))
-
-    return rho, u1, T
+    return rho, u1, u2, p, T
 
 def init():
 
     def parameterInput():
 
-        #TODO:设置基本参数
-
         gamma = 0#1.4
+        theta = 5.352   #degree
         Courant = 0#0.5
         tStepNumb = 0#1600 #time step number and residual collection
+        E = 3
 
-        return gamma, Courant, tStepNumb
+        return gamma, Courant, tStepNumb, E, theta
 
     def originalVariablesInit():
 
-        #TODO:初始变量setup
+        # Grid parameter
+        x = np.linspace(0,65,66)    #m
+        y = np.linspace(0, 40, 41)  #m
+        h = np.zeros_like(x)
+        ys = np.zeros_like(x)
 
-        # x = 0#np.linspace(0,3,61)
-        # A = 0#1 + 2.2 * np.square(x - 1.5)
-        rho = np.zeros_like(x)
-        u1 = np.zeros_like(x) #the inital u1 is given by mass flux which is constant
-        u2 = np.zeros_like(x)
-        # u3 = np.zeros_like(x)
-        T = 0#np.zeros_like(x)
+        # Properties
+        rho = np.zeros((len(x),len(y)),dtype=float)
+        u1 = np.zeros((len(x),len(y)),dtype=float)
+        u2 = np.zeros((len(x),len(y)),dtype=float)
+        # u3 = np.zeros((len(x),len(y)),dtype=float)
+        T = np.zeros((len(x),len(y)),dtype=float)
+        p = np.zeros((len(x),len(y)),dtype=float)
 
-        def gridinit(pGridx, pGridy):
-            
-            # TODO:代数网格坐标变换
-
-            cGridx = np.zeros_like(pGridx)
-            cGridy = np.zeros_like(pGridy)
-
-            return cGridx, cGridy
-
-        cGridx, cGridy = gridinit(pGridx, pGridy)
-
-        return cGridx, cGridy, rho, T
+        return x, y, ys, h, rho, u1, u2, T, p
 
     def conservVariablesInit(rho, u1, u2, p, gamma):
 
@@ -99,180 +95,166 @@ def init():
 
         return F1, F2, F3, F4
 
-    def flowFieldInit(x, rho, T):
+    def flowFieldInit(p, rho, T):
 
-        #TODO:流场初始化
+        p[0,:] = 1.01 * 10**5 # N/m^2
+        rho[0,:] = 1.23       # kg/m^3
+        T[0,:] = 286.1        # K
 
-        # for i in range(len(x)):
-        #     if 0<=x[i]<=0.5:
-        #         rho[i] = 1.0
-        #         T[i] = 1.0
-        #     if 0.5<=x[i]<=1.5:
-        #         rho[i] = 1.0 - 0.366*(x[i]-0.5)
-        #         T[i] = 1.0 - 0.167*(x[i]-0.5)
-        #     # if 1.5<=x[i]<=3.0:
-        #     #     rho[i] = 0.634 - 0.3879*(x[i]-1.5)
-        #     #     T[i] = 0.833 - 0.3507*(x[i]-1.5)
-        #     if 1.5<=x[i]<=2.1:
-        #         rho[i] = 0.634 - 0.702*(x[i]-1.5)
-        #         T[i] = 0.833 - 0.4908*(x[i]-1.5)
-        #     if 2.1<=x[i]<=3.0:
-        #         rho[i] = 0.5892 - 0.10228*(x[i]-2.1)
-        #         T[i] = 0.93968 - 0.0622*(x[i]-2.1)
-        #
-        # u1 = 0.59/(rho*A)
+        return p, rho, T
 
-        return rho, u1, T
+    def gridInit(E, theta, x, y, ys, h):
 
-    #TODO:初始化列表
+        # physical space
+        for i in range(len(ys)):
+            if x[i] >= E:
+                ys[i] = 0
+                h[i] = y[len(y)-1]
+            else:
+                ys[i] = -(x[i] - E) * np.tan(theta)
+                h[i] = y[len(y)-1] + (x[i] - E) * np.tan(theta) # H = y[len(y)-1]
 
-    gamma, Courant, tStepNumb = 0#parameterInput()
-    x, A, rho, T = 0#originalVariablesInit()
-    rho, u1, T = 0#flowFieldInit(x, rho, T)
+        dzetadx = np.zeros_like(x)
+        dzetady = np.zeros_like(y)
 
-    F1, F2, F3, F4 = conservVariablesInit(rho, A, u1, T, gamma)
+        dzetadx[:] = 1
+        dzetady[:] = 0
+        detadx = (h - y - ys)/h**2
+        detady = 1/h
 
-    return x, A, F1, F2, F3, F4, gamma, Courant, tStepNumb
+        return dzetadx, detadx, detady, dzetady
 
-def tscheme(x, A, U1, U2 ,U3, Courant, gamma):
+    gamma, Courant, tStepNumb, E, theta = parameterInput()
+    x, y, ys, h, rho, u1, u2, T, p = originalVariablesInit()
+    dzetadx, detadx, detady, dzetady = gridInit(theta, E, x, y, ys, h)
+    p, rho, T = flowFieldInit(p, rho, T)
+
+    F1, F2, F3, F4 = conservVariablesInit(rho, u1, u2, p, gamma)
+
+    return gamma, Courant, tStepNumb, x, h, rho, u1, u2, T, p, F1, F2, F3, F4, dzetadx, detadx, detady, dzetady
+
+def tscheme(dzetadx, detadx, detady, dzetady, F1, F2, F3 ,F4, Courant, gamma, R):
     # MacCormack scheme
-    rho, u1, T = originalVariables(U1, U2, U3, A, gamma)
-    dt = np.min(Courant * (x[1] - x[0]) / (u1 + np.sqrt(T)))#0.0267#
-    dx = 1/(x[1] - x[0])
+    rho, u1, u2, p, T = originalVariables(F1, F2, F3, F4, gamma, R)
+    # dt = np.min(Courant * (x[1] - x[0]) / (u1 + np.sqrt(T)))#0.0267#
+    # dx = 1/(x[1] - x[0])
     # dt = Courant * (x[1] - x[0]) / (u1 + np.sqrt(T))
     # dtdx = dt / (x[1] - x[0])
+    deta = 0
 
     #artificial viscosity
     def artiVisc(p, U):
         Cx = 0.2
         S = np.zeros_like(U)
         for i in range(1,len(S)-1):
-            S[i] = 0#Cx * np.abs(p[i+1] - 2*p[i] + p[i-1]) / (p[i+1] + 2*p[i] + p[i-1]) * (U[i+1] - 2*U[i] + U[i-1])
+            S[i] = Cx * np.abs(p[i+1] - 2*p[i] + p[i-1]) / (p[i+1] + 2*p[i] + p[i-1]) * (U[i+1] - 2*U[i] + U[i-1])
 
         return S
 
-    def preStep(F1, F2, F3, F4, dx, rho, T):
-
-        #TODO:预先步
+    def preStep(F1, F2, F3, F4, rho, h, detadx, deta):
 
         G1, G2, G3, G4 = fluxVariablesSet(F1, F2, F3, F4, rho, gamma)
 
-        predU1 = np.zeros_like(U1)
-        predU2 = np.zeros_like(U2)
-        predU3 = np.zeros_like(U3)
-        tmpJ2 = np.zeros_like(U2)
-        tmpJ22 = np.zeros_like(U2)
+        predF1 = np.zeros_like(F1)
+        predF2 = np.zeros_like(F2)
+        predF3 = np.zeros_like(F3)
+        predF4 = np.zeros_like(F4)
 
-        for i in range(1, len(predU1) - 1):
-            # original form
-            tmpJ2[i] = 1/gamma * rho[i] * T[i] * (A[i+1] - A[i])
-            # conservative form
-            tmpJ22[i] = (gamma-1)/gamma * (U3[i] - gamma/2 * np.square(U2[i])/U1[i]) * (np.log(A[i+1]) - np.log(A[i]))
+        for i in range(1, len(predF1) - 1):
+            predF1[i] = (detadx*(F1[i] - F1[i-1]) + 1/h[i]*(G1[i] - G1[i-1]))/deta
+            predF2[i] = (detadx*(F2[i] - F2[i-1]) + 1/h[i]*(G2[i] - G2[i-1]))/deta
+            predF3[i] = (detadx*(F3[i] - F3[i-1]) + 1/h[i]*(G3[i] - G3[i-1]))/deta
+            predF4[i] = (detadx*(F4[i] - F4[i-1]) + 1/h[i]*(G4[i] - G4[i-1]))/deta
 
-            predU1[i] = dx * (-(F1[i + 1] - F1[i])           )# + artiVisc(rho*T, U1, i)
-            predU2[i] = dx * (-(F2[i + 1] - F2[i]) + tmpJ2[i])# + artiVisc(rho*T, U2, i)
-            predU3[i] = dx * (-(F3[i + 1] - F3[i])           )# + artiVisc(rho*T, U3, i)
+        return predF1, predF2, predF3, predF4
 
-        # test for pre-step
-        # print((preCtn[15] - rho[15])/dt)
-        # print((preMmtU1[15] - u[15])/dt)
-        # print((preEng[15] - T[15])/dt)
+    def correctionStep(preF1, preF2, preF3, preF4, preRho, h, detadx, deta):
 
-        return predU1, predU2, predU3
+        preG1, preG2, preG3, preG4 = fluxVariablesSet(preF1, preF2, preF3, preF4, preRho, gamma)
 
-    def correctionStep(preU1, preU2, preU3, dx, rho, T):
+        cordF1 = np.zeros_like(preF1)
+        cordF2 = np.zeros_like(preF2)
+        cordF3 = np.zeros_like(preF3)
+        cordF4 = np.zeros_like(preF3)
 
-        #TODO:修正步
+        for i in range(1, len(cordF1) - 1):
+            cordF1[i] = (detadx*(preF1[i+1] - preF1[i]) + 1/h[i]*(preG1[i+1] - preG1[i]))/deta
+            cordF2[i] = (detadx*(preF2[i+1] - preF2[i]) + 1/h[i]*(preG2[i+1] - preG2[i]))/deta
+            cordF3[i] = (detadx*(preF3[i+1] - preF3[i]) + 1/h[i]*(preG3[i+1] - preG3[i]))/deta
+            cordF4[i] = (detadx*(preF4[i+1] - preF4[i]) + 1/h[i]*(preG4[i+1] - preG4[i]))/deta
 
-        F1, F2, F3 = fluxVariablesSet(preU1, preU2, preU3, gamma)
-
-        cordU1 = np.zeros_like(preU1)
-        cordU2 = np.zeros_like(preU2)
-        cordU3 = np.zeros_like(preU3)
-        tmpJ2  = np.zeros_like(preU2)
-        tmpJ22 = np.zeros_like(preU2)
-
-        for i in range(1, len(cordU1) - 1):
-            # original form
-            tmpJ2[i] = 1/gamma * rho[i] * T[i] * (A[i] - A[i-1])
-            # conservative form
-            tmpJ22[i] = (gamma-1)/gamma*(U3[i] - gamma/2 * np.square(U2[i])/U1[i]) * (np.log(A[i]) - np.log(A[i-1]))
-
-            cordU1[i] = dx * (-(F1[i] - F1[i - 1])           )# + artiVisc(rho*T, U1, i)
-            cordU2[i] = dx * (-(F2[i] - F2[i - 1]) + tmpJ2[i])# + artiVisc(rho*T, U2, i)
-            cordU3[i] = dx * (-(F3[i] - F3[i - 1])           )# + artiVisc(rho*T, U3, i)
-
-        # test for pre-step
-        # print((preCtn[15] - rho[15])/dt)
-        # print((preMmtU1[15] - u[15])/dt)
-        # print((preEng[15] - T[15])/dt)
-
-        return cordU1, cordU2, cordU3
-
-    #TODO:technological scheme list
+        return cordF1, cordF2, cordF3, cordF4
 
     #pre-step
-    predF1, predF2, predF3, predF4 = preStep(F1, F2, F3, F4, dx, rho, T)
-    # preS1, preS2, preS3 = artiVisc(rho * T, U1), artiVisc(rho * T, U2), artiVisc(rho * T, U3)
+    predF1, predF2, predF3, predF4 = preStep(F1, F2, F3, F4, detadx, deta, rho, h)
+    preF1, preF2, preF3, preF4 = (
+        F1 + dzeta*predF1 + artiVisc(p, F1),
+        F2 + dzeta*predF2 + artiVisc(p, F2),
+        F3 + dzeta*predF3 + artiVisc(p, F3),
+        F4 + dzeta*predF4 + artiVisc(p, F4))
 
-    #TODO need modification
-    preU1, preU2, preU3 = BCSet(U1 + predU1*dt + preS1, U2 + predU2*dt + preS2, U3 + predU3*dt + preS3, A, gamma)
+    # preU1, preU2, preU3 = BCSet(U1 + predU1*dt + preS1, U2 + predU2*dt + preS2, U3 + predU3*dt + preS3, A, gamma)
 
-    preRho, preu1, preT = originalVariables(preU1, preU2, preU3, A, gamma)
+    preRho, preu1, preu2, preP, preT = originalVariables(preF1, preF2, preF3, preF4, gamma, R)
 
     #correct-step
-    cordU1, cordU2, cordU3 = correctionStep(preU1, preU2, preU3, dx, preRho, preT)
-    corS1, corS2, corS3 = artiVisc(preRho * preT, preU1), artiVisc(preRho * preT, preU2), artiVisc(preRho * preT, preU3)
-    newU1, newU2, newU3 = BCSet(U1 + (predU1 + cordU1)*0.5*dt + corS1, U2 + (predU2 + cordU2)*0.5*dt + corS2, U3 + (predU3 + cordU3)*0.5*dt + corS3, A, gamma)
+    cordF1, cordF2, cordF3, cordF4 = correctionStep(preF1, preF2, preF3, preF4, detadx, deta, preRho, h)
+    newF1, newF2, newF3, newF4 = (
+        F1 + (predF1 + cordF1)*0.5*dzeta+ artiVisc(preP, preF1),
+        F2 + (predF2 + cordF2)*0.5*dzeta+ artiVisc(preP, preF2),
+        F3 + (predF3 + cordF3)*0.5*dzeta+ artiVisc(preP, preF3),
+        F4 + (predF4 + cordF4)*0.5*dzeta+ artiVisc(preP, preF4))
 
-    return newU1, newU2, newU3, dt
+    #BCSet(U1 + (predU1 + cordU1)*0.5*dt + corS1, U2 + (predU2 + cordU2)*0.5*dt + corS2, U3 + (predU3 + cordU3)*0.5*dt + corS3, A, gamma)
 
-def postProgress(U1, U2, U3, x, A, gamma, timeStepNumb, totalt, residual):
+    return newF1, newF2, newF3, newF4
 
-    #TODO: post-progress
-
-    rho, u1, T = originalVariables(U1, U2, U3, A, gamma)
-    p = rho * T
-    Ma = u1 / np.sqrt(T)
-
-    m = rho * u1 * A
-
-    def printData():
-        print("------------solve complete.------------")
-        print("iteration or temporal advancement times:", timeStepNumb)
-        print("total physical time:", totalt)
-
-        print("---------------------------------------")
-        print("residual:", residual)
-        print("ρ:", rho)
-        print("u1:", u1)
-        print("T:", T)
-        print("p", p)
-        print("Ma", Ma)
-        return
-
-    def drawData():
-        plt.figure()
-        # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
-        plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
-        # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
-        plt.show()
-        return
-
-    printData()
-
-    drawData()
-
-    # print("residual:", residual)
-    return 0
+# def postProgress(U1, U2, U3, x, A, gamma, timeStepNumb, totalt, residual):
+#
+#     #TODO: post-progress
+#
+#     rho, u1, T = originalVariables(F1, F2, F3, F4, A, gamma)
+#     p = rho * T
+#     Ma = u1 / np.sqrt(T)
+#
+#     m = rho * u1 * A
+#
+#     def printData():
+#         print("------------solve complete.------------")
+#         print("iteration or temporal advancement times:", timeStepNumb)
+#         print("total physical time:", totalt)
+#
+#         print("---------------------------------------")
+#         print("residual:", residual)
+#         print("ρ:", rho)
+#         print("u1:", u1)
+#         print("T:", T)
+#         print("p", p)
+#         print("Ma", Ma)
+#         return
+#
+#     def drawData():
+#         plt.figure()
+#         # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
+#         plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
+#         # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
+#         plt.show()
+#         return
+#
+#     printData()
+#
+#     drawData()
+#
+#     # print("residual:", residual)
+#     return 0
 
 def main():
 
-    x, A, U1, U2, U3, gamma, Courant, tStepNumb = init()
+    gamma, Courant, tStepNumb, x, h, rho, u1, u2, T, p, F1, F2, F3, F4, dzetadx, detadx, detady, dzetady = init()
     # totalt = 0
     # residual = np.array([],dtype=float)
     for t in range(tStepNumb):
-        newU1, newU2, newU3, dt = tscheme(x, A, U1, U2 ,U3, Courant, gamma)
+        newF1, newF2, newF3, newF4, dt = tscheme(dzetadx, detadx, detady, dzetady, F1, F2, F3 ,F4, Courant, gamma)
 
         # R = np.max([np.max(newU1 - U1), np.max(newU2 - U2), np.max(newU3 - U3)]) / dt
         # residual = np.append(R,residual)
