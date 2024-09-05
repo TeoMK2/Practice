@@ -16,23 +16,93 @@ import matplotlib.pyplot as plt
 #
 # Energy:               d(ρu(e+V^2/2)+pu)/dt = -d(ρv(e+V^2/2)+pv)/dx + 0
 
-
-
-
-def BCSet(U1, U2, U3, A,gamma):
+def BCSet(F1, F2, F3, F4, rho, gamma, R):
 
     #TODO:边界条件设置
 
-    # # inlet
-    # U1[0] = A[0]   #fix rho
-    # U2[0] = 2*U2[1] - U2[2] #interplot
-    # U3[0] = U1[0]*(1/(gamma-1)+gamma/2*np.square(U2[0]/U1[0]))  #T=1
-    # # outlet
-    # U1[len(U1) - 1] = 2 * U1[len(U1) - 2] - U1[len(U1) - 3]
-    # U2[len(U2) - 1] = 2 * U2[len(U2) - 2] - U2[len(U2) - 3]
-    # # U3[len(U3) - 1] = 2 * U3[len(U3) - 2] - U3[len(U3) - 3]
-    # U3[len(U3) - 1] = 0.6784*A[len(U3) - 1]/(gamma-1) + gamma/2*np.square(U2[len(U3) - 1])/U1[len(U3) - 1]     # p=0.6784 is constant
-    return U1, U2, U3
+    rho, u1, u2, p, T, Ma = originalVariables(F1, F2, F3, F4, gamma, R)
+
+    phi1 = np.arctan(u2/u1)
+    Ma1cal = np.sqrt(np.square(u1)+np.square(u2))/a1cal
+    fcal = np.sqrt((gamma+1)/(gamma-1))*np.arctan((gamma-1)/(gamma+1)*(np.square(Ma1cal)-1)) - np.arctan(np.square(Ma1cal)-1)
+    PMfactor = fcal + phi1
+
+
+    # #upper BC
+    # F1[len(F1) - 1] = F1[len(F1) - 2]
+    # F2[len(F2) - 1] = F2[len(F2) - 2]
+    # F3[len(F3) - 1] = F3[len(F3) - 2]
+    # F4[len(F4) - 1] = F4[len(F4) - 2]
+    #
+    # #lower BC
+    # G1, G2, G3, G4 = fluxVariablesSet(F1, F2, F3, F4, rho, gamma)
+    # predF = np.zeros(4)
+    # i = 0
+    # for preFG in ([[F1,G1], [F2,G2], [F3,G3], [F4,G4]]):
+    #     Fc = preFG[0][0]
+    #     Fs = preFG[0][1]
+    #     Gc = preFG[1][0]
+    #     Gc = preFG[0][1]
+    #     predF[i] = preStep(FG[[0],[0]], FG[[0],[0]], h, detadx, deta)
+    #     i += 1
+    #
+    # for corFG in ([[F1,G1], [F2,G2], [F3,G3], [F4,G4]]):
+    #     Fc = corFG[0][0]
+    #     Fs = corFG[0][1]
+    #     Gc = corFG[1][0]
+    #     Gc = corFG[0][1]
+    #     predF[i] = preStep(FG[[0],[0]], FG[[0],[0]], h, detadx, deta)
+    #     i += 1
+    #
+    # def preStep(Fc, FS, Gc, Gs, h, detadx, deta):
+    #
+    #     predF = -(detadx*(Fc - FS) + 1/h*(Gc - Gs))/deta
+    #
+    #     return predF
+    #
+    # def corStep(preFc, preFs, preGc, preGs, h, detadx, deta):
+    #
+    #     cordF = -(detadx*(preFc - preFs) + 1/h*(preGc - preGs))/deta
+    #
+    #     return cordF
+    #
+    #
+    #
+    # def preStep(F1, F2, F3, F4, rho, h, detadx, deta):
+    #
+    #     G1, G2, G3, G4 = fluxVariablesSet(F1, F2, F3, F4, rho, gamma)
+    #
+    #     predF1 = np.zeros_like(F1)
+    #     predF2 = np.zeros_like(F2)
+    #     predF3 = np.zeros_like(F3)
+    #     predF4 = np.zeros_like(F4)
+    #
+    #     for j in range(1, len(predF1) - 1):
+    #         predF1[j] = -(detadx*(F1[j] - F1[j-1]) + 1/h[j]*(G1[j] - G1[j-1]))/deta
+    #         predF2[j] = -(detadx*(F2[j] - F2[j-1]) + 1/h[j]*(G2[j] - G2[j-1]))/deta
+    #         predF3[j] = -(detadx*(F3[j] - F3[j-1]) + 1/h[j]*(G3[j] - G3[j-1]))/deta
+    #         predF4[j] = -(detadx*(F4[j] - F4[j-1]) + 1/h[j]*(G4[j] - G4[j-1]))/deta
+    #
+    #     return predF1, predF2, predF3, predF4
+    #
+    # def correctionStep(preF1, preF2, preF3, preF4, preRho, h, detadx, deta):
+    #
+    #     preG1, preG2, preG3, preG4 = fluxVariablesSet(preF1, preF2, preF3, preF4, preRho, gamma)
+    #
+    #     cordF1 = np.zeros_like(preF1)
+    #     cordF2 = np.zeros_like(preF2)
+    #     cordF3 = np.zeros_like(preF3)
+    #     cordF4 = np.zeros_like(preF3)
+    #
+    #     for j in range(1, len(cordF1[:,0]) - 1):
+    #         cordF1[j] = -(detadx*(preF1[j+1] - preF1[j]) + 1/h[j]*(preG1[j+1] - preG1[j]))/deta
+    #         cordF2[j] = -(detadx*(preF2[j+1] - preF2[j]) + 1/h[j]*(preG2[j+1] - preG2[j]))/deta
+    #         cordF3[j] = -(detadx*(preF3[j+1] - preF3[j]) + 1/h[j]*(preG3[j+1] - preG3[j]))/deta
+    #         cordF4[j] = -(detadx*(preF4[j+1] - preF4[j]) + 1/h[j]*(preG4[j+1] - preG4[j]))/deta
+    #
+    #     return cordF1, cordF2, cordF3, cordF4
+
+    return F1, F2, F3, F4
 
 def fluxVariablesSet(F1, F2, F3, F4, rho, gamma):
 
@@ -53,38 +123,40 @@ def originalVariables(F1, F2, F3, F4, gamma, R):
     u2 = F3/F1
     p = F2 - F1*u1
     T = p/(rho*R)
+    #TODO: sound speed
+    Ma = np.sqrt(np.square(u1) + np.square(u2))/339 # a0 = 339
 
-    return rho, u1, u2, p, T
+    return rho, u1, u2, p, T, Ma
 
 def init():
 
     def parameterInput():
 
-        gamma = 0#1.4
-        theta = 5.352   #degree
-        Courant = 0#0.5
-        tStepNumb = 0#1600 #time step number and residual collection
-        E = 3
+        gamma = 1.4
+        theta = 0.0934  #5.352degree
+        Courant = 0.5
+        # tStepNumb = 0#1600 #time step number and residual collection
+        E = 10 #m
+        R = 1.295 #g/L
+        MaInit = 2
 
-        return gamma, Courant, tStepNumb, E, theta
+        return gamma, Courant, theta, E, R, MaInit
 
     def originalVariablesInit():
 
         # Grid parameter
-        x = np.linspace(0,65,66)    #m
+        Lx = 65
         y = np.linspace(0, 40, 41)  #m
-        h = np.zeros_like(x)
-        ys = np.zeros_like(x)
 
         # Properties
-        rho = np.zeros((len(x),len(y)),dtype=float)
-        u1 = np.zeros((len(x),len(y)),dtype=float)
-        u2 = np.zeros((len(x),len(y)),dtype=float)
+        rho = np.zeros((1,len(y)),dtype=float)
+        u1 = np.zeros((1,len(y)),dtype=float)
+        u2 = np.zeros((1,len(y)),dtype=float)
         # u3 = np.zeros((len(x),len(y)),dtype=float)
-        T = np.zeros((len(x),len(y)),dtype=float)
-        p = np.zeros((len(x),len(y)),dtype=float)
+        T = np.zeros((1,len(y)),dtype=float)
+        p = np.zeros((1,len(y)),dtype=float)
 
-        return x, y, ys, h, rho, u1, u2, T, p
+        return Lx, y, rho, u1, u2, T, p
 
     def conservVariablesInit(rho, u1, u2, p, gamma):
 
@@ -95,63 +167,75 @@ def init():
 
         return F1, F2, F3, F4
 
-    def flowFieldInit(p, rho, T):
+    def flowFieldInit(Ma, u1, u2, p, rho, T):
 
         p[0,:] = 1.01 * 10**5 # N/m^2
         rho[0,:] = 1.23       # kg/m^3
         T[0,:] = 286.1        # K
+        u1[0,:] = Ma * 339 #sound speed (m/s)
+        u2[0,:] = 0
 
-        return p, rho, T
+        return p, rho, T, u1, u2
 
     def gridInit(E, theta, x, y, ys, h):
 
         # physical space
         for i in range(len(ys)):
-            if x[i] >= E:
+            if x[i] <= E:
                 ys[i] = 0
                 h[i] = y[len(y)-1]
             else:
                 ys[i] = -(x[i] - E) * np.tan(theta)
                 h[i] = y[len(y)-1] + (x[i] - E) * np.tan(theta) # H = y[len(y)-1]
 
-        dzetadx = np.zeros_like(x)
-        dzetady = np.zeros_like(y)
+        detadx = (h - y[len(y)-1] + ys)/h**2
 
-        dzetadx[:] = 1
-        dzetady[:] = 0
-        detadx = (h - y - ys)/h**2
-        detady = 1/h
+        return h, detadx
 
-        return dzetadx, detadx, detady, dzetady
-
-    gamma, Courant, tStepNumb, E, theta = parameterInput()
-    x, y, ys, h, rho, u1, u2, T, p = originalVariablesInit()
-    dzetadx, detadx, detady, dzetady = gridInit(theta, E, x, y, ys, h)
-    p, rho, T = flowFieldInit(p, rho, T)
+    gamma, Courant, theta, E, R, MaInit = parameterInput()
+    Lx, y, rho, u1, u2, T, p = originalVariablesInit()
+    # h, detadx = gridInit(E, theta, x, y, ys, h)
+    p, rho, T, u1, u2 = flowFieldInit(MaInit, u1, u2, p, rho, T)
 
     F1, F2, F3, F4 = conservVariablesInit(rho, u1, u2, p, gamma)
 
-    return gamma, Courant, tStepNumb, x, h, rho, u1, u2, T, p, F1, F2, F3, F4, dzetadx, detadx, detady, dzetady
+    return gamma, R, theta, Courant, Lx, E, y, rho, u1, u2, T, p, F1, F2, F3, F4
 
-def tscheme(dzetadx, detadx, detady, dzetady, F1, F2, F3 ,F4, Courant, gamma, R):
+def tscheme(currLx, theta, E, y, F1, F2, F3, F4, Courant, gamma, R):
     # MacCormack scheme
-    rho, u1, u2, p, T = originalVariables(F1, F2, F3, F4, gamma, R)
-    # dt = np.min(Courant * (x[1] - x[0]) / (u1 + np.sqrt(T)))#0.0267#
-    # dx = 1/(x[1] - x[0])
-    # dt = Courant * (x[1] - x[0]) / (u1 + np.sqrt(T))
-    # dtdx = dt / (x[1] - x[0])
-    deta = 0
+    rho, u1, u2, p, T, Ma = originalVariables(F1, F2, F3, F4, gamma, R)
+
+    def calh(currLx, y, E, theta):
+        if currLx <= E:
+            h = y[len(y)-1]
+        else:
+            h = y[len(y)-1] + (currLx - E) * np.tan(theta)
+        return h
+
+    def caldetadx(currLx, E, h, theta, eta):
+        detadx = np.zeros_like(y)
+        for j in range(len(detadx)):
+            if currLx <= E:
+                detadx[j] = 0
+            else:
+                detadx[j] = (1 - eta[j])*np.tan(theta)/h
+        return detadx
+
+    def caldzeta(y, u1, u2, Ma):
+        theta = np.arctan(u2/u1)
+        niu = np.arcsin(1/Ma)
+        dzeta = Courant*(y[1]-y[0])/np.max([np.abs(np.tan(theta[:]+niu[:])),np.abs(np.tan(theta[:]-niu[:]))])
+        return dzeta
 
     #artificial viscosity
     def artiVisc(p, U):
         Cx = 0.2
         S = np.zeros_like(U)
-        for i in range(1,len(S)-1):
-            S[i] = Cx * np.abs(p[i+1] - 2*p[i] + p[i-1]) / (p[i+1] + 2*p[i] + p[i-1]) * (U[i+1] - 2*U[i] + U[i-1])
-
+        for j in range(1,len(S)-1):
+            S[j] = Cx * np.abs(p[j+1] - 2*p[j] + p[j-1]) / (p[j+1] + 2*p[j] + p[j-1]) * (U[j+1] - 2*U[j] + U[j-1])
         return S
 
-    def preStep(F1, F2, F3, F4, rho, h, detadx, deta):
+    def preStep(F1, F2, F3, F4, rho, h, detadx, eta):
 
         G1, G2, G3, G4 = fluxVariablesSet(F1, F2, F3, F4, rho, gamma)
 
@@ -160,11 +244,17 @@ def tscheme(dzetadx, detadx, detady, dzetady, F1, F2, F3 ,F4, Courant, gamma, R)
         predF3 = np.zeros_like(F3)
         predF4 = np.zeros_like(F4)
 
-        for i in range(1, len(predF1) - 1):
-            predF1[i] = (detadx*(F1[i] - F1[i-1]) + 1/h[i]*(G1[i] - G1[i-1]))/deta
-            predF2[i] = (detadx*(F2[i] - F2[i-1]) + 1/h[i]*(G2[i] - G2[i-1]))/deta
-            predF3[i] = (detadx*(F3[i] - F3[i-1]) + 1/h[i]*(G3[i] - G3[i-1]))/deta
-            predF4[i] = (detadx*(F4[i] - F4[i-1]) + 1/h[i]*(G4[i] - G4[i-1]))/deta
+        for j in range(0, len(predF1) - 1):
+            if 0 < j <= len(predF1)-1:
+                predF1[j] = -(detadx[j]*(F1[j] - F1[j-1]) + 1/h*(G1[j] - G1[j-1]))/(eta[j] - eta[j-1])
+                predF2[j] = -(detadx[j]*(F2[j] - F2[j-1]) + 1/h*(G2[j] - G2[j-1]))/(eta[j] - eta[j-1])
+                predF3[j] = -(detadx[j]*(F3[j] - F3[j-1]) + 1/h*(G3[j] - G3[j-1]))/(eta[j] - eta[j-1])
+                predF4[j] = -(detadx[j]*(F4[j] - F4[j-1]) + 1/h*(G4[j] - G4[j-1]))/(eta[j] - eta[j-1])
+            if j <= 0:
+                predF1[j] = -(detadx[j]*(F1[j+1] - F1[j]) + 1/h*(G1[j+1] - G1[j]))/(eta[j+1] - eta[j])
+                predF2[j] = -(detadx[j]*(F2[j+1] - F2[j]) + 1/h*(G2[j+1] - G2[j]))/(eta[j+1] - eta[j])
+                predF3[j] = -(detadx[j]*(F3[j+1] - F3[j]) + 1/h*(G3[j+1] - G3[j]))/(eta[j+1] - eta[j])
+                predF4[j] = -(detadx[j]*(F4[j+1] - F4[j]) + 1/h*(G4[j+1] - G4[j]))/(eta[j+1] - eta[j])
 
         return predF1, predF2, predF3, predF4
 
@@ -177,28 +267,39 @@ def tscheme(dzetadx, detadx, detady, dzetady, F1, F2, F3 ,F4, Courant, gamma, R)
         cordF3 = np.zeros_like(preF3)
         cordF4 = np.zeros_like(preF3)
 
-        for i in range(1, len(cordF1) - 1):
-            cordF1[i] = (detadx*(preF1[i+1] - preF1[i]) + 1/h[i]*(preG1[i+1] - preG1[i]))/deta
-            cordF2[i] = (detadx*(preF2[i+1] - preF2[i]) + 1/h[i]*(preG2[i+1] - preG2[i]))/deta
-            cordF3[i] = (detadx*(preF3[i+1] - preF3[i]) + 1/h[i]*(preG3[i+1] - preG3[i]))/deta
-            cordF4[i] = (detadx*(preF4[i+1] - preF4[i]) + 1/h[i]*(preG4[i+1] - preG4[i]))/deta
+        for j in range(1, len(cordF1) - 1):
+            if 0 <= j < len(cordF1)-1:
+                cordF1[j] = -(detadx[j]*(preF1[j+1] - preF1[j]) + 1/h*(preG1[j+1] - preG1[j]))/(eta[j+1] - eta[j])
+                cordF2[j] = -(detadx[j]*(preF2[j+1] - preF2[j]) + 1/h*(preG2[j+1] - preG2[j]))/(eta[j+1] - eta[j])
+                cordF3[j] = -(detadx[j]*(preF3[j+1] - preF3[j]) + 1/h*(preG3[j+1] - preG3[j]))/(eta[j+1] - eta[j])
+                cordF4[j] = -(detadx[j]*(preF4[j+1] - preF4[j]) + 1/h*(preG4[j+1] - preG4[j]))/(eta[j+1] - eta[j])
+            if j >= len(cordF1)-1:
+                cordF1[j] = -(detadx[j]*(preF1[j] - preF1[j-1]) + 1/h*(preG1[j] - preG1[j-1]))/(eta[j] - eta[j-1])
+                cordF2[j] = -(detadx[j]*(preF2[j] - preF2[j-1]) + 1/h*(preG2[j] - preG2[j-1]))/(eta[j] - eta[j-1])
+                cordF3[j] = -(detadx[j]*(preF3[j] - preF3[j-1]) + 1/h*(preG3[j] - preG3[j-1]))/(eta[j] - eta[j-1])
+                cordF4[j] = -(detadx[j]*(preF4[j] - preF4[j-1]) + 1/h*(preG4[j] - preG4[j-1]))/(eta[j] - eta[j-1])
 
         return cordF1, cordF2, cordF3, cordF4
 
+    h = calh(currLx, y, E, theta)
+    dzeta = caldzeta(y, u1, u2, Ma)
+    eta = (y + (currLx - E)*np.tan(theta))/h
+    detadx = caldetadx(currLx, E, h, theta, eta)
+
     #pre-step
-    predF1, predF2, predF3, predF4 = preStep(F1, F2, F3, F4, detadx, deta, rho, h)
+    predF1, predF2, predF3, predF4 = preStep(F1, F2, F3, F4, rho, h, detadx, eta)
     preF1, preF2, preF3, preF4 = (
         F1 + dzeta*predF1 + artiVisc(p, F1),
         F2 + dzeta*predF2 + artiVisc(p, F2),
         F3 + dzeta*predF3 + artiVisc(p, F3),
         F4 + dzeta*predF4 + artiVisc(p, F4))
 
-    # preU1, preU2, preU3 = BCSet(U1 + predU1*dt + preS1, U2 + predU2*dt + preS2, U3 + predU3*dt + preS3, A, gamma)
+    # preF1, preF2, preF3, preF4 = BCSet(preF1, preF2, preF3, preF4, rho, gamma, R)
 
-    preRho, preu1, preu2, preP, preT = originalVariables(preF1, preF2, preF3, preF4, gamma, R)
+    preRho, preu1, preu2, preP, preT, preMa = originalVariables(preF1, preF2, preF3, preF4, gamma, R)
 
-    #correct-step
-    cordF1, cordF2, cordF3, cordF4 = correctionStep(preF1, preF2, preF3, preF4, detadx, deta, preRho, h)
+    # #correct-step
+    cordF1, cordF2, cordF3, cordF4 = correctionStep(preF1, preF2, preF3, preF4, preRho, h, detadx, eta)
     newF1, newF2, newF3, newF4 = (
         F1 + (predF1 + cordF1)*0.5*dzeta+ artiVisc(preP, preF1),
         F2 + (predF2 + cordF2)*0.5*dzeta+ artiVisc(preP, preF2),
@@ -207,62 +308,70 @@ def tscheme(dzetadx, detadx, detady, dzetady, F1, F2, F3 ,F4, Courant, gamma, R)
 
     #BCSet(U1 + (predU1 + cordU1)*0.5*dt + corS1, U2 + (predU2 + cordU2)*0.5*dt + corS2, U3 + (predU3 + cordU3)*0.5*dt + corS3, A, gamma)
 
-    return newF1, newF2, newF3, newF4
+    # newF1, newF2, newF3, newF4 = BCSet(newF1, newF2, newF3, newF4, rho, gamma)
 
-# def postProgress(U1, U2, U3, x, A, gamma, timeStepNumb, totalt, residual):
-#
-#     #TODO: post-progress
-#
-#     rho, u1, T = originalVariables(F1, F2, F3, F4, A, gamma)
-#     p = rho * T
-#     Ma = u1 / np.sqrt(T)
-#
-#     m = rho * u1 * A
-#
-#     def printData():
-#         print("------------solve complete.------------")
-#         print("iteration or temporal advancement times:", timeStepNumb)
-#         print("total physical time:", totalt)
-#
-#         print("---------------------------------------")
-#         print("residual:", residual)
-#         print("ρ:", rho)
-#         print("u1:", u1)
-#         print("T:", T)
-#         print("p", p)
-#         print("Ma", Ma)
-#         return
-#
-#     def drawData():
-#         plt.figure()
-#         # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
-#         plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
-#         # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
-#         plt.show()
-#         return
-#
-#     printData()
-#
-#     drawData()
-#
-#     # print("residual:", residual)
-#     return 0
+    return newF1, newF2, newF3, newF4, dzeta
+
+def postProgress(F1, F2, F3, F4, totalx):
+
+    # rho, u1, T = originalVariables(F1, F2, F3, F4, A, gamma)
+    # p = rho * T
+    # Ma = u1 / np.sqrt(T)
+    #
+    # m = rho * u1 * A
+
+    def printData():
+        print("------------solve complete.------------")
+        # print("iteration or temporal advancement times:", timeStepNumb)
+        print("total physical space:", totalx)
+
+        print("---------------------------------------")
+        # print("residual:", residual)
+        # print("ρ:", rho)
+        # print("u1:", u1)
+        # print("T:", T)
+        # print("p", p)
+        # print("Ma", Ma)
+        print("F1:", F1)
+        return
+
+    def drawData():
+        plt.figure()
+        # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
+        plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
+        # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
+        plt.show()
+        return
+
+    printData()
+
+    # drawData()
+
+    # print("residual:", residual)
+    return 0
 
 def main():
 
-    gamma, Courant, tStepNumb, x, h, rho, u1, u2, T, p, F1, F2, F3, F4, dzetadx, detadx, detady, dzetady = init()
+    gamma, R, theta, Courant, Lx, E, y, rho, u1, u2, T, p, F1, F2, F3, F4 = init()
     # totalt = 0
     # residual = np.array([],dtype=float)
-    for t in range(tStepNumb):
-        newF1, newF2, newF3, newF4, dt = tscheme(dzetadx, detadx, detady, dzetady, F1, F2, F3 ,F4, Courant, gamma)
-
+    totalx = 0
+    while(totalx < Lx):
+        newF1, newF2, newF3, newF4, dzeta = tscheme(totalx, theta, E, y, F1[len(F1)-1,:], F2[len(F2)-1,:], F3[len(F3)-1,:],F4[len(F4)-1,:], Courant, gamma, R)
+        if (totalx>=12.900):
+            newF1, newF2, newF3, newF4, dzeta = tscheme(totalx, theta, E, y, F1[len(F1)-1,:], F2[len(F2)-1,:], F3[len(F3)-1,:],F4[len(F4)-1,:], Courant, gamma, R)
         # R = np.max([np.max(newU1 - U1), np.max(newU2 - U2), np.max(newU3 - U3)]) / dt
         # residual = np.append(R,residual)
 
-        U1, U2, U3 = newU1, newU2, newU3
+        F1 = np.append(F1, newF1[np.newaxis,:], axis=0)
+        F2 = np.append(F2, newF2[np.newaxis,:], axis=0)
+        F3 = np.append(F3, newF3[np.newaxis,:], axis=0)
+        F4 = np.append(F4, newF4[np.newaxis,:], axis=0)
+
+        totalx += dzeta
         # totalt += dt
-        # if t == tStepNumb-1:
-        #     postProgress(U1, U2, U3, x, A, gamma, tStepNumb, totalt, residual)
+
+    postProgress(F1, F2, F3, F4, totalx)
 
     return 0
 
