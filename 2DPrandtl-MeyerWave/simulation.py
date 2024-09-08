@@ -17,69 +17,72 @@ from scipy.optimize import fsolve   #Nonlinear Equation Solver
 #
 # Energy:               d(ρu(e+V^2/2)+pu)/dt = -d(ρv(e+V^2/2)+pv)/dx + 0
 
-def geometry(currLx, y, eta, E, theta0):
+def geometry(currLx, Ly, eta, E, theta0):
     if currLx <= E:
         theta = 0
-        h = y[len(y)-1]
+        h = Ly
         detadx = np.zeros(shape=eta.shape)
     else:
         theta = theta0
-        h = y[len(y)-1] + (currLx - E)*np.tan(theta)
+        h = Ly + (currLx - E)*np.tan(theta)
         detadx = (1-eta)*np.tan(theta)/h
 
     return theta, h, detadx
 
-def BCSet(F1b, F2b, F3b, F4b, gamma, R, theta):
+def BCSet(F1, F2, F3, F4, gamma, R, theta):
 
-    #TODO:边界条件设置
-    def calMaAct(f, gamma, Ma_guess):
+    # newF1[0] = 2*newF1[1] - newF1[2]
+    # newF2[0] = 2*newF2[1] - newF2[2]
+    # newF3[0] = 2*newF3[1] - newF3[2]
+    # newF4[0] = 2*newF4[1] - newF4[2]
 
-        # Define the equation for Ma based on the provided formula
-        def equation(Ma):
-            return np.sqrt((gamma + 1) / (gamma - 1)) * np.arctan(np.sqrt((gamma - 1) / (gamma + 1) * (Ma**2 - 1))) - np.arctan(np.sqrt(Ma**2 - 1)) - f
+    def topBC(F1, F2, F3, F4):
 
-        # Solve for Ma using fsolve
-        Ma_solution = fsolve(equation, Ma_guess)
+        F1b = 2*F1[-2] - F1[-3]
+        F2b = 2*F2[-2] - F2[-3]
+        F3b = 2*F3[-2] - F3[-3]
+        F4b = 2*F4[-2] - F4[-3]
 
-        return  Ma_solution[0]
+        return F1b, F2b, F3b, F4b
 
-    def calMaAct2(f, gamma):
-        # 二分法求马赫数
-        xm = np.array([1,2.5,5])
-        eps = 1e-5
-        n = 0
-        while abs(xm[0]-xm[2])>= eps:
-            fm = np.sqrt((gamma+1)/(gamma-1))*np.arctan(np.sqrt((gamma-1)/(gamma+1)*(xm**2-1)))-np.arctan(np.sqrt(xm**2-1))-f
-            if fm[1]*fm[2]<0:
-                xm = np.array([xm[1],(xm[1]+xm[2])/2,xm[2]])
-            else:
-                if fm[1]*fm[2]>0:
-                    xm = np.array([xm[0],(xm[0]+xm[1])/2,xm[1]])
-                else:
-                    xm = np.array([xm[1],xm[1],xm[1]])
-            n=n+1
-            if n>1000:
-                print('Warning ! Max iteration for Ma2')
-                break
-        return  xm[0]
+    def botBC(F1, F2, F3, F4, gamma, R, theta):
 
-    rhoCal, u1Cal, u2Cal, pCal, TCal, MaCal = conserve2Origin(F1b, F2b, F3b, F4b, gamma, R)
+        F1b = 2*F1[1] - F1[2]
+        F2b = 2*F2[1] - F2[2]
+        F3b = 2*F3[1] - F3[2]
+        F4b = 2*F4[1] - F4[2]
 
-    phi1 = theta + np.arctan(np.abs(u2Cal/u1Cal))
+        def calMaAct(f, gamma, Ma_guess):
+            # Define the equation for Ma based on the provided formula
+            def equation(Ma):
+                return np.sqrt((gamma + 1) / (gamma - 1)) * np.arctan(np.sqrt((gamma - 1) / (gamma + 1) * (Ma**2 - 1))) - np.arctan(np.sqrt(Ma**2 - 1)) - f
 
-    fCal = np.sqrt( (gamma + 1)/(gamma - 1) ) * np.arctan(np.sqrt( (gamma - 1)/(gamma + 1) * (MaCal**2-1))) - np.arctan(np.sqrt(MaCal**2-1))
-    fAct = fCal + phi1
+                # Solve for Ma using fsolve
+            Ma_solution = fsolve(equation, Ma_guess)
 
-    MaAct = calMaAct2(fAct, gamma)#calMaAct(fAct, gamma, MaCal)
-    pAct = pCal * ( ((1+(gamma-1)/2)*MaCal**2) / ((1+(gamma-1)/2)*MaAct**2) )**(gamma/(gamma-1))
-    TAct = TCal *   ((1+(gamma-1)/2)*MaCal**2) / ((1+(gamma-1)/2)*MaAct**2)
-    rhoAct = pAct/R/TAct
-            # Ma2*np.sqrt(gamma*R*T2/(1+np.tan(theta)**2))
-    u1Act = MaAct * np.sqrt(gamma*R*TAct/(1+np.square(np.tan(theta))))
-    u2Act = -u1Act*np.tan(theta)
-    F1b, F2b, F3b, F4b = origin2Conserve(rhoAct, u1Act, u2Act, pAct, gamma)
+            return  Ma_solution[0]
 
-    return F1b, F2b, F3b, F4b
+        rhoCal, u1Cal, u2Cal, pCal, TCal, MaCal = conserve2Origin(F1b, F2b, F3b, F4b, gamma, R)
+
+        phi1 = theta + np.arctan(u2Cal/u1Cal)
+
+        fCal = np.sqrt( (gamma + 1)/(gamma - 1) ) * np.arctan(np.sqrt( (gamma - 1)/(gamma + 1) * (MaCal**2-1))) - np.arctan(np.sqrt(MaCal**2-1))
+        fAct = fCal + phi1
+
+        MaAct = calMaAct(fAct, gamma, MaCal)#calMaAct2(fAct, gamma)#
+        pAct = pCal * ( (1+(gamma-1)/2*MaCal**2) / (1+(gamma-1)/2*MaAct**2) )**(gamma/(gamma-1))
+        TAct = TCal *   (1+(gamma-1)/2*MaCal**2) / (1+(gamma-1)/2*MaAct**2)
+        rhoAct = pAct/R/TAct
+        u1Act = MaAct * np.sqrt(gamma*R*TAct/(1+np.square(np.tan(theta))))
+        u2Act = -u1Act*np.tan(theta)
+        F1b, F2b, F3b, F4b = origin2Conserve(rhoAct, u1Act, u2Act, pAct, gamma)
+        return F1b, F2b, F3b, F4b
+
+    F1[0], F2[0], F3[0], F4[0] = botBC(F1, F2, F3, F4, gamma, R, theta)
+
+    F1[-1], F2[-1], F3[-1], F4[-1] = topBC(F1, F2, F3, F4)
+
+    return F1, F2, F3, F4
 
 def conserve2Origin(F1, F2, F3, F4, gamma, R):
 
@@ -91,7 +94,7 @@ def conserve2Origin(F1, F2, F3, F4, gamma, R):
     u2 = F3/F1
     p = F2 - F1*u1
     T = p/rho/R
-    Ma = np.sqrt(np.square(u1) + np.square(u2))/np.sqrt(gamma*T*R)
+    Ma = np.sqrt(u1**2 + u2**2)/np.sqrt(gamma*T*R)
 
     return rho, u1, u2, p, T, Ma
 
@@ -108,8 +111,8 @@ def fluxVariablesSet(F1, F2, F3, F4, rho, gamma):
 
     G1 = rho*F3/F1
     G2 = F3
-    G3 = rho*np.square(F3/F1) + F2 - np.square(F1)/rho
-    G4 = gamma/(gamma-1)*(F2 - np.square(F1)/rho)*F3/F1 + rho/2*F3/F1*(np.square(F1/rho)+np.square(F3/rho))
+    G3 = rho*(F3/F1)**2 + F2 - F1**2/rho
+    G4 = gamma/(gamma-1)*(F2 - F1**2/rho)*F3/F1 + rho/2*F3/F1*((F1/rho)**2+(F3/F1)**2)
 
     return G1, G2, G3, G4
 
@@ -120,10 +123,8 @@ def init():
         gamma = 1.4
         theta = 5.352*np.pi/180
         Courant = 0.5
-        Cy = 0.5    # factor of artificial viscosity
-        # tStepNumb = 0#1600 #time step number and residual collection
+        Cy = 0.6    # factor of artificial viscosity
         E = 10 #m
-        # R = 1.295 #g/L
         MaInit = 2
 
         return gamma, Courant, theta, E, MaInit, Cy
@@ -132,17 +133,18 @@ def init():
 
         # Grid parameter
         Lx = 65
-        y = np.linspace(0, 40, 41)  #m
-        eta = np.linspace(0, 1, len(y))
+        Ly = 40
+        Ny = 401
+        eta = np.linspace(0, 1, Ny)
         # Properties
-        rho = np.zeros((1,len(y)),dtype=float)
-        u1 = np.zeros((1,len(y)),dtype=float)
-        u2 = np.zeros((1,len(y)),dtype=float)
+        rho = np.zeros((1,Ny),dtype=float)
+        u1 = np.zeros((1,Ny),dtype=float)
+        u2 = np.zeros((1,Ny),dtype=float)
         # u3 = np.zeros((len(x),len(y)),dtype=float)
-        T = np.zeros((1,len(y)),dtype=float)
-        p = np.zeros((1,len(y)),dtype=float)
+        T = np.zeros((1,Ny),dtype=float)
+        p = np.zeros((1,Ny),dtype=float)
 
-        return Lx, y, eta, rho, u1, u2, T, p
+        return Lx, Ly, eta, rho, u1, u2, T, p
 
     def flowFieldInit(MaInit, gamma, u1, u2, p, rho, T):
 
@@ -156,26 +158,35 @@ def init():
         return p, rho, T, u1, u2, R
 
     gamma, Courant, theta, E, MaInit, Cy = parameterInput()
-    Lx, y, eta, rho, u1, u2, T, p = originalVariablesInit()
+    Lx, Ly, eta, rho, u1, u2, T, p = originalVariablesInit()
     p, rho, T, u1, u2, R = flowFieldInit(MaInit, gamma, u1, u2, p, rho, T)
 
     F1, F2, F3, F4 = origin2Conserve(rho, u1, u2, p, gamma)
 
-    return gamma, R, theta, Courant, Cy, Lx, E, y, eta,rho, u1, u2, T, p, F1, F2, F3, F4
+    return gamma, R, theta, Courant, Cy, Lx, E, Ly, eta, rho, u1, u2, T, p, F1, F2, F3, F4
 
-def tscheme(theta, h, detadx, y, F1, F2, F3, F4, Courant, gamma, R, Cy):
+def tscheme(theta, h, detadx, eta, F1, F2, F3, F4, Courant, gamma, R, Cy):
     # MacCormack scheme
 
-    def caldksi(y, u1, u2, Ma):
-        theta = np.arctan(u2/u1)
-        niu = np.arcsin(1/Ma)
-        dksi = Courant*(y[1]-y[0])/max(max(np.abs(np.tan(theta+niu))),max(np.abs(np.tan(theta-niu))))
+    def caldksi(Courant, deta, h, Ma):
+        theta = np.arctan(u2/u1)#5.352*np.pi/180#
+        mu = np.arcsin(1/Ma)
+        dksi = Courant*(deta*h)/max(max(np.abs(np.tan(theta+mu))),max(np.abs(np.tan(theta-mu))))
         return dksi
 
     def artiVisc(p, U, Cy): #artificial viscosity
         S = np.zeros_like(U)
-        for j in range(1,len(S)-1):
-            S[j] = Cy * np.abs(p[j+1] - 2*p[j] + p[j-1]) / (p[j+1] + 2*p[j] + p[j-1]) * (U[j+1] - 2*U[j] + U[j-1])
+        # for j in range(1,len(S)-1):
+        #     S[j] = Cy * np.abs(p[j+1] - 2*p[j] + p[j-1]) / (p[j+1] + 2*p[j] + p[j-1]) * (U[j+1] - 2*U[j] + U[j-1])
+
+        for j in range(len(S)):
+            if 0 < j < len(S)-1:
+                S[j] = Cy * np.abs(p[j+1] - 2*p[j] + p[j-1]) / (p[j+1] + 2*p[j] + p[j-1]) * (U[j+1] - 2*U[j] + U[j-1])
+            elif j == 0:
+                S[j] = Cy * np.abs(p[j+2] - 2*p[j+1] + p[j]) / (p[j+2] + 2*p[j+1] + p[j]) * (U[j+2] - 2*U[j+1] + U[j])
+            else:
+                S[j] = 0
+
         return S
 
     def preStep(F1, F2, F3, F4, rho, h, detadx, deta):
@@ -194,10 +205,10 @@ def tscheme(theta, h, detadx, y, F1, F2, F3, F4, Courant, gamma, R, Cy):
                 predF3[j] = -(detadx[j]*(F3[j+1] - F3[j]) + 1/h*(G3[j+1] - G3[j]))/deta
                 predF4[j] = -(detadx[j]*(F4[j+1] - F4[j]) + 1/h*(G4[j+1] - G4[j]))/deta
             if j >= len(predF1)-1:
-                predF1[j] = -(detadx[j]*(F1[j] - F1[j-1]) + 1/h*(G1[j] - G1[j-1]))/deta
-                predF2[j] = -(detadx[j]*(F2[j] - F2[j-1]) + 1/h*(G2[j] - G2[j-1]))/deta
-                predF3[j] = -(detadx[j]*(F3[j] - F3[j-1]) + 1/h*(G3[j] - G3[j-1]))/deta
-                predF4[j] = -(detadx[j]*(F4[j] - F4[j-1]) + 1/h*(G4[j] - G4[j-1]))/deta
+                predF1[j] = predF1[j-1]#-(detadx[j]*(F1[j] - F1[j-1]) + 1/h*(G1[j] - G1[j-1]))/deta
+                predF2[j] = predF2[j-1]#-(detadx[j]*(F2[j] - F2[j-1]) + 1/h*(G2[j] - G2[j-1]))/deta
+                predF3[j] = predF3[j-1]#-(detadx[j]*(F3[j] - F3[j-1]) + 1/h*(G3[j] - G3[j-1]))/deta
+                predF4[j] = predF4[j-1]#-(detadx[j]*(F4[j] - F4[j-1]) + 1/h*(G4[j] - G4[j-1]))/deta
 
         return predF1, predF2, predF3, predF4
 
@@ -225,8 +236,8 @@ def tscheme(theta, h, detadx, y, F1, F2, F3, F4, Courant, gamma, R, Cy):
         return cordF1, cordF2, cordF3, cordF4
 
     rho, u1, u2, p, T, Ma = conserve2Origin(F1, F2, F3, F4, gamma, R)
-    dksi = caldksi(y, u1, u2, Ma)
-    deta = (y[1]-y[0])/y[len(y)-1]
+    deta = eta[1]-eta[0]
+    dksi = caldksi(Courant, deta, h, Ma)
 
     #pre-step
     predF1, predF2, predF3, predF4 = preStep(F1, F2, F3, F4, rho, h, detadx, deta)
@@ -246,29 +257,41 @@ def tscheme(theta, h, detadx, y, F1, F2, F3, F4, Courant, gamma, R, Cy):
         F3 + (predF3 + cordF3)*0.5*dksi+ artiVisc(preP, preF3, Cy),
         F4 + (predF4 + cordF4)*0.5*dksi+ artiVisc(preP, preF4, Cy))
 
-    newF1[0] = 2*newF1[1] - newF1[2]
-    newF2[0] = 2*newF2[1] - newF2[2]
-    newF3[0] = 2*newF3[1] - newF3[2]
-    newF4[0] = 2*newF4[1] - newF4[2]
+    # newF1[0] = 2*newF1[1] - newF1[2]
+    # newF2[0] = 2*newF2[1] - newF2[2]
+    # newF3[0] = 2*newF3[1] - newF3[2]
+    # newF4[0] = 2*newF4[1] - newF4[2]
+    # newF1[0] = 2*newF1[1] - newF1[2]
+    # newF2[0] = 2*newF2[1] - newF2[2]
+    # newF3[0] = 2*newF3[1] - newF3[2]
+    # newF4[0] = 2*newF4[1] - newF4[2]
 
-    newF1[0], newF2[0], newF3[0], newF4[0] = BCSet(newF1[0], newF2[0], newF3[0], newF4[0], gamma, R, theta)
-
-    # newF1, newF2, newF3, newF4 = BCSet(newF1, newF2, newF3, newF4, rho, gamma)
+    newF1, newF2, newF3, newF4 = BCSet(newF1, newF2, newF3, newF4, gamma, R, theta)
 
     return newF1, newF2, newF3, newF4, dksi
 
-def postProgress(F1, F2, F3, F4, totalx):
+def postProgress(xSet, E, eta, F1, F2, F3, F4, gamma, R):
 
-    # rho, u1, T = originalVariables(F1, F2, F3, F4, A, gamma)
-    # p = rho * T
-    # Ma = u1 / np.sqrt(T)
-    #
-    # m = rho * u1 * A
+    y = np.zeros((len(xSet),len(eta)),dtype=float)
+    for i in range(len(xSet)):
+        for j in range(len(eta)):
+            if xSet[i] <= E:
+                h = 40
+                ys = 0
+                y[i,j] = eta[j]*h+ys
+            else:
+                theta = 5.352*np.pi/180
+                h = 40 + (xSet[i]-E)*np.tan(theta)
+                ys = -(xSet[i]-E)*np.tan(theta)
+                y[i,j] = eta[j]*h+ys
+    x = (np.tile(xSet, (y.shape[1],1))).T
+
+    rho, u1, u2, p, T, Ma = conserve2Origin(F1, F2, F3, F4, gamma, R)
 
     def printData():
         print("------------solve complete.------------")
         # print("iteration or temporal advancement times:", timeStepNumb)
-        print("total physical space:", totalx)
+        # print("total physical space:", xSet)
 
         print("---------------------------------------")
         # print("residual:", residual)
@@ -277,46 +300,55 @@ def postProgress(F1, F2, F3, F4, totalx):
         # print("T:", T)
         # print("p", p)
         # print("Ma", Ma)
-        print("F1:", F1)
+        # print("F1:", F1)
         return
 
-    # def drawData():
-    #     plt.figure()
-    #     # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
-    #     plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
-    #     # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
-    #     plt.show()
-    #     return
+    def drawData(x, y, data, name):
+        plt.figure()
+        # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
+        pic = plt.contourf(x,y,data,alpha=0.8,cmap='jet')
+        # plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
+        plt.colorbar(pic)
+        plt.xlabel('x (m)')
+        plt.ylabel('y (m)')
+        plt.title('Evolution of ' + name)
+        # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
+        plt.show()
+        return
 
-    printData()
+    # printData()
 
-    # drawData()
+    drawData(x, y, Ma, 'Ma')
+    drawData(x, y, rho, 'rho')
+    drawData(x, y, u1, 'u1')
+    drawData(x, y, u2, 'u2')
+    drawData(x, y, T, 'T')
+    drawData(x, y, p, 'p')
+
     return 0
 
 def main():
 
-    gamma, R, theta0, Courant, Cy, Lx, E, y, eta, rho, u1, u2, T, p, F1, F2, F3, F4 = init()
-    totalx = 0
+    gamma, R, theta0, Courant, Cy, Lx, E, Ly, eta, rho, u1, u2, T, p, F1, F2, F3, F4 = init()
+    xSet = np.zeros(1,dtype=float)
     iterNumb = 0
-    while(totalx < Lx):
-        theta, h, detadx = geometry(totalx, y, eta, E, theta0)  #calculate current geometry parameter
-        if (totalx >= 10.0):
-            newF1, newF2, newF3, newF4, dksi = tscheme(theta, h, detadx, y, F1[len(F1)-1,:], F2[len(F2)-1,:], F3[len(F3)-1,:],F4[len(F4)-1,:], Courant, gamma, R, Cy)
-        else:
-            newF1, newF2, newF3, newF4, dksi = tscheme(theta, h, detadx, y, F1[len(F1)-1,:], F2[len(F2)-1,:], F3[len(F3)-1,:],F4[len(F4)-1,:], Courant, gamma, R, Cy)
+    while xSet[-1] < Lx:
+        currLx = xSet[-1]
+        theta, h, detadx = geometry(currLx, Ly, eta, E, theta0)  #calculate current geometry parameter
+        newF1, newF2, newF3, newF4, dksi = tscheme(theta, h, detadx, eta, F1[len(F1)-1,:], F2[len(F2)-1,:], F3[len(F3)-1,:],F4[len(F4)-1,:], Courant, gamma, R, Cy)
 
         F1 = np.append(F1, newF1[np.newaxis,:], axis=0)
         F2 = np.append(F2, newF2[np.newaxis,:], axis=0)
         F3 = np.append(F3, newF3[np.newaxis,:], axis=0)
         F4 = np.append(F4, newF4[np.newaxis,:], axis=0)
 
-        totalx += dksi
+        xSet = np.append(xSet, xSet[-1] + dksi)
         iterNumb += 1
 
         if (iterNumb >= 1000): #defensive design
             break
 
-    # postProgress(F1, F2, F3, F4, totalx)
+    postProgress(xSet, E, eta, F1, F2, F3, F4, gamma, R)
 
     return 0
 
