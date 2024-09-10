@@ -18,34 +18,16 @@ def BCSet(u1):
     u1[-1] = 1
     return u1
 
-def fluxVariablesSet(U1, U2, U3, gamma):
-
-    F1 = U2
-    F2 = np.square(U2)/U1 + (gamma-1)/gamma*(U3 - gamma/2*np.square(U2)/U1)
-    F3 = gamma*U2*U3/U1 - gamma*(gamma-1)/2*(U2**3)/np.square(U1)
-
-    #tmp = gamma*round(U2[14],3)*round(U3[14],3)/round(U1[14],3) - gamma*(gamma-1)/2*(round(U2[14],3)**3)/np.square(round(U1[14],3))
-
-    return F1, F2, F3
-
-def originalVariables(U1, U2, U3, A, gamma):
-
-    rho = U1/A
-    u1 = U2/U1
-    T = (gamma-1)*(U3/U1 - gamma/2*np.square(u1))
-
-    return rho, u1, T
-
 def init():
 
     def parameterInput():
-        E = 0.5
-        tStepNumb = 1600 #time step number and residual collection
-        Ren = 10
+        E = 4000
+        tStepNumb = 10000 #time step number and residual collection
+        Ren = 5000
         return E, Ren, tStepNumb
 
     def originalVariablesInit():
-        y = np.linspace(0,3,21)
+        y = np.linspace(0,1,21)
         u1 = np.zeros_like(y) #the inital u1 is given by mass flux which is constant
         return y, u1
 
@@ -72,19 +54,15 @@ def tscheme(y, u1, E, Ren):
 
     def solveTridiaMatrix(TDM, RHS):
 
-        if len(TDM[0,:]) != len(RHS) or len(TDM[:,0]) != len(RHS):
-            print("error: Matrix's size is not match with solution vector's size")
-            sys.exit()
-
         for i in range(1,len(TDM[0,:])):
-            if TDM[i,i-1] != 0:
-                TDM[i,:] -= TDM[i-1,:]*(TDM[i,i-1]/TDM[i-1,i-1])
-                RHS[i] -= RHS[i-1]*(TDM[i,i-1]/TDM[i-1,i-1])
+            ratio = (TDM[i,i-1]/TDM[i-1,i-1])
+            TDM[i,:] -= TDM[i-1,:]*ratio
+            RHS[i] -= RHS[i-1]*ratio
 
         for i in range(len(TDM[0,:])-2,-1,-1):
-            if TDM[i,i+1] != 0:
-                TDM[i,:] -= TDM[i+1,:]*(TDM[i,i+1]/TDM[i+1,i+1])
-                RHS[i] -= RHS[i+1]*(TDM[i,i+1]/TDM[i+1,i+1])
+            ratio = (TDM[i,i+1]/TDM[i+1,i+1])
+            TDM[i,:] -= TDM[i+1,:]*(TDM[i,i+1]/TDM[i+1,i+1])
+            RHS[i] -= RHS[i+1]*ratio
 
         for i in range(len(RHS)):
             RHS[i] /= TDM[i,i]
@@ -95,53 +73,54 @@ def tscheme(y, u1, E, Ren):
     dy = y[1] - y[0]
     dt = E*Ren*dy**2
     coef = E/2
-    RHS = np.zeros(len(y)-2)
-    for i in range(len(RHS)):
+    RHS = np.zeros(len(y))
+    for i in range(1,len(RHS)-1):
         # where i in RHS correspond to i+1 in u1
-        RHS[i] = (1 - 2*coef)*u1[i+1] + coef*(u1[i+2] + u1[i])
+        if i == 1:
+            RHS[i] = (1 - coef*2)*u1[i] + coef*(u1[i-1] + u1[i+1]) + u1[i-1]*coef  #K2 - A
+        elif i == len(RHS)-2:
+            RHS[i] = (1 - coef*2)*u1[i] + coef*(u1[i-1] + u1[i+1]) + u1[i+1]*coef  #KN - A
+        else:
+            RHS[i] = (1 - coef*2)*u1[i] + coef*(u1[i-1] + u1[i+1])
 
     # combine a tridiagonal matrix
-    triDiagMatrix = combMatrix(-coef, 1 + coef, -coef, len(y)-2)
+    triDiagMatrix = combMatrix(-coef, 1 + coef*2, -coef, len(y)-2)
 
     # solve tridiagonal matrix with Thomas' method
-    newu1 = np.pad(solveTridiaMatrix(triDiagMatrix, RHS), pad_width=1, mode='constant', constant_values=0)    # append head and tail
-    BCSet(newu1)
+    #soluVector = np.pad(), pad_width=1, mode='constant', constant_values=0)    # append head and tail
+    RHS[1:-1] = solveTridiaMatrix(triDiagMatrix, RHS[1:-1])
+    newu1 = BCSet(RHS)
 
     return newu1, dt
 
-def postProgress(u1, y, tStepNumb, totalt, residual):
+def postProgress(u1, y, tStepNumb, totalt):
 
-    # rho, u1, T = originalVariables(U1, U2, U3, A, gamma)
-    # p = rho * T
-    # Ma = u1 / np.sqrt(T)
-    #
-    # m = rho * u1 * A
 
-    # def printData():
-    #     print("------------solve complete.------------")
-    #     print("iteration or temporal advancement times:", timeStepNumb)
-    #     print("total physical time:", totalt)
-    #
-    #     print("---------------------------------------")
-    #     print("residual:", residual)
-    #     print("ρ:", rho)
-    #     print("u1:", u1)
-    #     print("T:", T)
-    #     print("p", p)
-    #     print("Ma", Ma)
-    #     return
-    #
-    # def drawData():
-    #     plt.figure()
-    #     # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
-    #     plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
-    #     # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
-    #     plt.show()
-    #     return
+    def printData():
+        print("------------solve complete.------------")
+        print("iteration or temporal advancement times:", tStepNumb)
+        print("total physical time:", totalt)
+
+        print("---------------------------------------")
+        # print("ρ:", rho)
+        print("u1:", u1)
+        print("y:", y)
+        # print("p", p)
+        # print("Ma", Ma)
+        return
+
+    def drawData():
+        plt.figure()
+        # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
+        for i in range(len(u1)):
+            plt.plot(u1[i], y, '-o', linewidth=1.0, color='black', markersize=1)
+        # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
+        plt.show()
+        return
 
     # printData()
 
-    # drawData()
+    drawData()
 
     # print("residual:", residual)
     return 0
@@ -150,17 +129,18 @@ def main():
 
     y, u1, E, Ren, tStepNumb = init()
     totalt = 0
-    residual = np.array([],dtype=float)
-    for t in range(tStepNumb):
-        newu1, dt = tscheme(y, u1, E, Ren)
+    collector_u1 = np.zeros((1,len(y)),dtype=float)
+    for t in range(tStepNumb+1):
+        for n in ([0,40,200,800,10000]):
+            if t == n:
+                collector_u1 = np.append(collector_u1, u1[np.newaxis,:], axis=0)
 
-        # R = np.max([np.max(newU1 - U1), np.max(newU2 - U2), np.max(newU3 - U3)]) / dt
-        # residual = np.append(R,residual)
+        newu1, dt = tscheme(y, u1, E, Ren)
 
         u1 = newu1
         totalt += dt
-        if t == tStepNumb-1:
-            postProgress(u1, y, tStepNumb, totalt, residual)
+
+    postProgress(collector_u1, y, tStepNumb, totalt)
 
     return 0
 
