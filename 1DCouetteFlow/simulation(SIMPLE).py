@@ -11,26 +11,34 @@ import sys
 # Momentum:             d(ρu1)/dt + d(ρu1^2)/dx + d(ρu1u2)/dy = -d(p)/dx + μ(d^2(u1)/dx^2 + d^2(u1)/dy^2)
 #                       d(ρu2)/dt + d(ρu1u2)/dx + d(ρu2^2)/dy = -d(p)/dy + μ(d^2(u2)/dx^2 + d^2(u2)/dy^2)
 
+def checkDiv(u1, u2, dx, dy):
+    div = np.zeros((len(u2[:,0]),len(u1[0,:])),dtype=float)
+    for i in range(len(div[:,0])):
+        for j in range(len(div[0,:])):
+            div[i,j] = (u1[i+1,j] - u1[i,j])/dx + (u2[i,j+1] - u2[i,j])/dy
+    maxDiv = np.max(div)
+    return maxDiv
+
 def velBCSet(u1, u2, U):
-    # upper BC
-    u1[-1,:] = U
-    u2[-1,:] = 0
-    # lower BC
-    u1[0,:] = 0
-    u2[0,:] = 0
     # inlet BC
+    u2[0,:] = 0
+    # upper BC
+    u1[:,-1] = U
+    u2[:,-1] = 0
+    # lower BC
+    u1[:,0] = 0
     u2[:,0] = 0
     return u1, u2
 
 def presBCSet(pp):
-    # upper
-    pp[-1,:] = 0
-    # lower
-    pp[0,:] = 0
     # inlet
-    pp[:,0] = 0
+    pp[0,:] = 0
     # outlet
+    pp[-1,:] = 0
+    # upper
     pp[:,-1] = 0
+    # lower
+    pp[:,0] = 0
     return pp
 
 def init():
@@ -42,12 +50,11 @@ def init():
         Ny = 11
         x = np.linspace(0,Lx, Nx)
         y = np.linspace(0,Ly, Ny)
-        U = 0.002377 #slug/ft^3
+        U = 1 #ft/s
 
         Courant = 0.5
-        mu = 1e-5
-        rho = 1
-
+        rho = 0.002377 #slug/ft^3
+        mu = U*Ly*rho/63.6
         nt = 100
 
         return x, y, U, mu, rho, nt, Courant
@@ -137,10 +144,11 @@ def tscheme(x, y, u1, u2, inu2, outu2, rho, ps, pp, mu, Courant, U):
 
     dx = x[1] - x[0]
     dy = y[1] - y[0]
-    dt = Courant*np.sqrt(dx**2 + dy**2)
+    dt = 0.001#Courant*np.sqrt(dx**2 + dy**2)
 
     semiRhoU1, semiRhoU2 = semiStep(u1, u2, inu2, outu2, ps, rho, dx, dy, dt, mu)
-    semiRhoU1, semiRhoU2 = velBCSet(semiRhoU1/rho, semiRhoU2/rho, U)*rho
+    semiU1, semiU2 = velBCSet(semiRhoU1[:,:]/rho, semiRhoU2[:,:]/rho, U)
+    semiRhoU1, semiRhoU2 = semiU1*rho, semiU2*rho
     pp = pCorrect(semiRhoU1, semiRhoU2, pp, dx, dy, dt)
     pp = presBCSet(pp)
 
@@ -148,7 +156,7 @@ def tscheme(x, y, u1, u2, inu2, outu2, rho, ps, pp, mu, Courant, U):
     newRhoU1, newRhoU2 = uCorrect(semiRhoU1, semiRhoU2, pp, dx, dy, dt)
     newU1, newU2 = velBCSet(newRhoU1/rho, newRhoU2/rho, U)
 
-    return newU1, newU2, newP
+    return newU1, newU2, newP, dx, dy
 
 def postProgress(u1, y, tStepNumb, totalt):
 
@@ -183,13 +191,24 @@ def postProgress(u1, y, tStepNumb, totalt):
 def main():
 
     x, y, u1, u2, inu2, outu2, ps, pp, rho, nt, mu, Courant, U = init()
-    for t in range(nt):
-
-        newU1, newU2, newP = tscheme(x, y, u1, u2, inu2, outu2, rho, ps, pp, mu, Courant, U)
+    t = 0
+    while(1):#for t in range(nt):
+        newU1, newU2, newP, dx, dy = tscheme(x, y, u1, u2, inu2, outu2, rho, ps, pp, mu, Courant, U)
 
         u1 = newU1
         u2 = newU2
         ps = newP
+        t += 1
+
+        if checkDiv(u1,u2,dx,dy) <= 1e-5:
+            break
+
+        if t == 150:
+            print("flag")
+            break
+        if t == 1000:
+            print("maximum iteration times")
+            break
     # postProgress(collector_u1, y, tStepNumb, totalt, residual)
 
     return 0
