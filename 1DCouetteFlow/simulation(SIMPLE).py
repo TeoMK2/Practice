@@ -19,7 +19,7 @@ def checkDiv(u1, u2, dx, dy):
     maxDiv = np.max(div)
     return maxDiv
 
-def velBCSet(u1, u2, U, outu2):
+def velBCupdate(u1, u2, U, outu2):
     # upper BC
     u1[:,-1] = U
     u2[:,-1] = 0
@@ -27,10 +27,10 @@ def velBCSet(u1, u2, U, outu2):
     u1[:,0] = 0
     u2[:,0] = 0
     # inlet
-    u1[0,1:-1] = u1[1,1:-1]
+    u1[0,:] = u1[1,:]
     # outlet
     outu2[:] = u2[-1,:]
-    u1[-1,1:-1] = u1[-2,1:-1]
+    u1[-1,:] = u1[-2,:]
     return u1, u2, outu2
 
 def presBCSet(pp):
@@ -80,7 +80,7 @@ def init():
     x ,y ,U, mu, rho = parameterInput()
     u1, u2, ps, inu2, outu2 = originalVariablesInit(x, y)
     u1, u2, ps, pp = flowFieldInit(u1, u2, U, ps)
-    u1, u2, outu2 = velBCSet(u1, u2, U, outu2)
+    u1, u2, outu2 = velBCupdate(u1, u2, U, outu2)
     pp = presBCSet(pp)
 
     return x, y, u1, u2, inu2, outu2, ps, pp, rho, mu, U
@@ -145,76 +145,71 @@ def tscheme(x, y, u1, u2, inu2, outu2, rho, ps, pp, mu, U):
         newpp = presBCSet(newpp)
         return newpp
 
-    def uCorrect(semiRhoU1, semiRhoU2, pp, dx, dy, dt):
-
-        newRhoU1, newRhoU2 = np.zeros_like(semiRhoU1), np.zeros_like(semiRhoU2)
-
-        for i in range(1,len(semiRhoU1[:,0])-1):
-            for j in range(1,len(semiRhoU1[0,:])-1):
-                pi = i - 1
-                newRhoU1[i,j] = semiRhoU1[i,j] + dt/dx*(pp[pi+1,j] - pp[pi,j])
-        for i in range(1,len(semiRhoU2[:,0])-1):
-            for j in range(1,len(semiRhoU2[0,:])-1):
-                pj = j - 1
-                newRhoU2[i,j] = semiRhoU2[i,j] + dt/dy*(pp[i,pj+1] - pp[i,pj])
-        return newRhoU1, newRhoU2
-
     dx = x[1] - x[0]
     dy = y[1] - y[0]
     dt = 0.001#Courant*np.sqrt(dx**2 + dy**2)
 
-    semiRhoU1, semiRhoU2 = semiStep(u1, u2, inu2, outu2, ps, rho, dx, dy, dt, mu)
-    semiU1, semiU2, outu2 = velBCSet(semiRhoU1[:,:]/rho, semiRhoU2[:,:]/rho, U, outu2)
-    semiRhoU1, semiRhoU2 = semiU1*rho, semiU2*rho
+    # main iteration step (SIMPLE Method)
+    for i in range(300):
+    # while(1): # need set with iteration exit condition
+        semiRhoU1, semiRhoU2 = semiStep(u1, u2, inu2, outu2, ps, rho, dx, dy, dt, mu)
+        semiU1, semiU2, outu2 = velBCupdate(semiRhoU1/rho, semiRhoU2/rho, U, outu2)
+        semiRhoU1, semiRhoU2 = semiU1*rho, semiU2*rho
 
-    # iterNum = 0
-    # while(1):
-    #     pp = pCorrect(semiRhoU1, semiRhoU2, pp, dx, dy, dt)
-    #     if np.max(pp) <= 1e-3:
-    #         newP = ps + pp
-    #         print("iteration times of Poisson's Equation: ", iterNum)
-    #         break
-    #     iterNum += 1
+        # sub-iteration step (Relaxation Method)
+        for j in range(200):
+        # while(1): # need set with iteration exit condition
+            newpp = pCorrect(semiRhoU1, semiRhoU2, pp, dx, dy, dt)
+            # if j == 199:
+            #     print("pp-newpp: ",np.max(pp-newpp))
+            pp = newpp
 
-    for i in range(200):
-        newpp = pCorrect(semiRhoU1, semiRhoU2, pp, dx, dy, dt)
-        pp = newpp
-        if i == 199:
-            print(np.max(pp-newpp))
+        ps += 0.1*pp
 
-    newP = ps + 0.1*pp
+        print("max divergence: ", checkDiv(u1, u2, dx, dy))
+        # print("semiU1-u1: ", np.max(semiRhoU1/rho-u1), "   iterNum: ", i)
+        # if i == 299:
+            # print("semiU1-u1: ", np.max(semiRhoU1/rho-u1))
+            # print("semiU2-u2: ", np.max(semiRhoU2/rho-u2))
+        u1 = semiRhoU1/rho
+        u2 = semiRhoU2/rho
+        u1, u2, outu2 = velBCupdate(u1, u2, U, outu2)
 
-    newRhoU1, newRhoU2 = uCorrect(semiRhoU1, semiRhoU2, pp, dx, dy, dt)
-    newU1, newU2, outu2 = velBCSet(newRhoU1/rho, newRhoU2/rho, U, outu2)
+    return u1, u2, inu2, outu2, ps, dx, dy
 
-    return newU1, newU2, newP, dx, dy
+def postProgress(u1, u2, inu2, outu2, ps, x, y):
+    X = np.tile(x, (len(y),1)).T
+    Y = np.tile(y, (len(x),1))
 
-def postProgress(u1, y, tStepNumb, totalt):
-
-
-    def printData():
-        print("------------solve complete.------------")
-        print("iteration or temporal advancement times:", tStepNumb)
-        print("total physical time:", totalt)
-
-        print("---------------------------------------")
-        print("u1:", u1)
-        print("y:", y)
-
-        return
-
-    def drawData():
+    # def printData():
+    #     print("------------solve complete.------------")
+    #     print("iteration or temporal advancement times:", tStepNumb)
+    #     print("total physical time:", totalt)
+    #
+    #     print("---------------------------------------")
+    #     print("u1:", u1)
+    #     print("y:", y)
+    #
+    #     return
+    #
+    def drawData(x, y, data, name):
         plt.figure()
         # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
-        for i in range(len(u1)):
-            plt.plot(u1[i], y, '-o', linewidth=1.0, color='black', markersize=1)
+        pic = plt.contourf(X,Y,data,alpha=0.8,cmap='jet')
+        # plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
+        plt.colorbar(pic)
+        plt.xlabel('x (m)')
+        plt.ylabel('y (m)')
+        plt.title('Evolution of ' + name)
         # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
         plt.show()
         return
 
-    printData()
+    # printData()
 
-    drawData()
+    # drawData(x, y, 0.5*(u1[:-1,:]+u1[1:,:]), 'u1')
+    drawData(x, y, 0.5*(u2[:,:-1]+u2[:,1:]), 'u2')
+    drawData(x, y, ps, 'p')
 
     # print("residual:", residual)
     return 0
@@ -222,24 +217,9 @@ def postProgress(u1, y, tStepNumb, totalt):
 def main():
 
     x, y, u1, u2, inu2, outu2, ps, pp, rho, mu, U = init()
-    t = 0
-    while(1):#for t in range(nt):
-        newU1, newU2, newP, dx, dy = tscheme(x, y, u1, u2, inu2, outu2, rho, ps, pp, mu, U)
+    u1, u2, inu2, outu2, ps, dx, dy = tscheme(x, y, u1, u2, inu2, outu2, rho, ps, pp, mu, U)
 
-        u1 = newU1
-        u2 = newU2
-        ps = newP
-        t += 1
-
-        if checkDiv(u1,u2,dx,dy) <= 1e-5:
-            break
-
-        if t == 300:
-            print("flag")
-        if t == 1000:
-            print("maximum iteration times")
-            break
-    # postProgress(collector_u1, y, tStepNumb, totalt, residual)
+    postProgress(u1, u2, inu2, outu2, ps, x, y)
 
     return 0
 
