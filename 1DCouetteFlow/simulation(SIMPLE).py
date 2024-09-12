@@ -13,8 +13,8 @@ import sys
 
 def checkDiv(u1, u2, dx, dy):
     div = np.zeros((len(u2[:,0]),len(u1[0,:])),dtype=float)
-    for i in range(len(div[:,0])):
-        for j in range(len(div[0,:])):
+    for i in range(1,len(div[:,0])-1):
+        for j in range(1,len(div[0,:])-1):
             div[i,j] = (u1[i+1,j] - u1[i,j])/dx + (u2[i,j+1] - u2[i,j])/dy
     maxDiv = np.max(div)
     return maxDiv
@@ -58,7 +58,9 @@ def init():
         rho = 0.002377 #slug/ft^3
         mu = U*Ly*rho/63.6
 
-        return x, y, U, mu, rho
+        dt = 0.001
+
+        return x, y, dt, U, mu, rho
 
     def originalVariablesInit(x, y):
         p = np.zeros((len(x),len(y)),dtype=float)
@@ -77,15 +79,15 @@ def init():
 
         return u1, u2, ps, pp
 
-    x ,y ,U, mu, rho = parameterInput()
+    x ,y , dt, U, mu, rho = parameterInput()
     u1, u2, ps, inu2, outu2 = originalVariablesInit(x, y)
     u1, u2, ps, pp = flowFieldInit(u1, u2, U, ps)
     u1, u2, outu2 = velBCupdate(u1, u2, U, outu2)
     pp = presBCSet(pp)
 
-    return x, y, u1, u2, inu2, outu2, ps, pp, rho, mu, U
+    return x, y, dt, u1, u2, inu2, outu2, ps, pp, rho, mu, U
 
-def tscheme(x, y, u1, u2, inu2, outu2, rho, ps, pp, mu, U):
+def tscheme(dx, dy, dt, u1, u2, inu2, outu2, rho, ps, pp, mu, U):
 
     def semiStep(u1, u2, inu2, outu2, ps, rho, dx, dy, dt, mu):
         # calculate velocity with divergence
@@ -134,6 +136,9 @@ def tscheme(x, y, u1, u2, inu2, outu2, rho, ps, pp, mu, U):
         a = 2*(1/dx**2 + 1/dy**2)*dt
         b = -dt/dx**2
         c = -dt/dy**2
+
+        dcolle = 0
+
         newpp = np.zeros_like(pp)
         # solve Poisson equation using Relaxation Method
         for i in range(1,len(pp[:,0])-1):
@@ -141,43 +146,27 @@ def tscheme(x, y, u1, u2, inu2, outu2, rho, ps, pp, mu, U):
                 # iu1 = i + 1
                 # ju2 = j + 1
                 d = (rhoU1[i+1,j] - rhoU1[i,j])/dx + (rhoU2[i,j+1] - rhoU2[i,j])/dy
+                if i == 15 and j == 5:
+                    dcolle = d
                 newpp[i,j] = -(b*(pp[i+1,j] + pp[i-1,j]) + c*(pp[i,j+1] + pp[i,j-1]) + d)/a
         newpp = presBCSet(newpp)
-        return newpp
+        return newpp, dcolle
 
-    dx = x[1] - x[0]
-    dy = y[1] - y[0]
-    dt = 0.001#Courant*np.sqrt(dx**2 + dy**2)
-
-    # main iteration step (SIMPLE Method)
-    for i in range(300):
-    # while(1): # need set with iteration exit condition
-        semiRhoU1, semiRhoU2 = semiStep(u1, u2, inu2, outu2, ps, rho, dx, dy, dt, mu)
-        semiU1, semiU2, outu2 = velBCupdate(semiRhoU1/rho, semiRhoU2/rho, U, outu2)
-        semiRhoU1, semiRhoU2 = semiU1*rho, semiU2*rho
+    semiRhoU1, semiRhoU2 = semiStep(u1, u2, inu2, outu2, ps, rho, dx, dy, dt, mu)
+    semiU1, semiU2, outu2 = velBCupdate(semiRhoU1/rho, semiRhoU2/rho, U, outu2)
+    semiRhoU1, semiRhoU2 = semiU1*rho, semiU2*rho
 
         # sub-iteration step (Relaxation Method)
-        for j in range(200):
-        # while(1): # need set with iteration exit condition
-            newpp = pCorrect(semiRhoU1, semiRhoU2, pp, dx, dy, dt)
-            # if j == 199:
-            #     print("pp-newpp: ",np.max(pp-newpp))
-            pp = newpp
+    for j in range(200):
+    # while(1): # need set with iteration exit condition
+        newpp, dcolle = pCorrect(semiRhoU1, semiRhoU2, pp, dx, dy, dt)
+        pp = newpp
 
-        ps += 0.1*pp
+    ps += 0.1*pp
 
-        print("max divergence: ", checkDiv(u1, u2, dx, dy))
-        # print("semiU1-u1: ", np.max(semiRhoU1/rho-u1), "   iterNum: ", i)
-        # if i == 299:
-            # print("semiU1-u1: ", np.max(semiRhoU1/rho-u1))
-            # print("semiU2-u2: ", np.max(semiRhoU2/rho-u2))
-        u1 = semiRhoU1/rho
-        u2 = semiRhoU2/rho
-        u1, u2, outu2 = velBCupdate(u1, u2, U, outu2)
+    return semiRhoU1/rho, semiRhoU2/rho, inu2, outu2, ps, pp, dcolle
 
-    return u1, u2, inu2, outu2, ps, dx, dy
-
-def postProgress(u1, u2, inu2, outu2, ps, x, y):
+def postProgress(u1, u2, inu2, outu2, ps, x, y, u1colle):
     X = np.tile(x, (len(y),1)).T
     Y = np.tile(y, (len(x),1))
 
@@ -192,12 +181,14 @@ def postProgress(u1, u2, inu2, outu2, ps, x, y):
     #
     #     return
     #
-    def drawData(x, y, data, name):
+    def drawData(X, Y, data, name):
         plt.figure()
         # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
-        pic = plt.contourf(X,Y,data,alpha=0.8,cmap='jet')
+        pic = plt.contourf(X, Y, data, alpha=1, cmap='jet', levels=np.linspace(0,1,101))
         # plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
         plt.colorbar(pic)
+        plt.xlim(0, X[-1,0])
+        plt.ylim(0, Y[0,-1])
         plt.xlabel('x (m)')
         plt.ylabel('y (m)')
         plt.title('Evolution of ' + name)
@@ -205,21 +196,55 @@ def postProgress(u1, u2, inu2, outu2, ps, x, y):
         plt.show()
         return
 
+    def drawData2(data, y, name):
+        plt.figure()
+        # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
+        # pic = plt.contourf(X, Y, data, alpha=1, cmap='jet', levels=np.linspace(0,1,101))
+        for i in range(len(data[:,0])):
+            plt.plot(data[i], y, '-o', linewidth=1.0, color='black', markersize=1)
+        plt.title('Evolution of ' + name)
+        # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
+        plt.show()
+        return
+
     # printData()
 
-    # drawData(x, y, 0.5*(u1[:-1,:]+u1[1:,:]), 'u1')
-    drawData(x, y, 0.5*(u2[:,:-1]+u2[:,1:]), 'u2')
-    drawData(x, y, ps, 'p')
+    # drawData(X, Y, 0.5*(u1[:-1,:]+u1[1:,:]), 'u1')
+    # drawData(X, Y, 0.5*(u2[:,:-1]+u2[:,1:]), 'u2')
+    # drawData(X, Y, ps, 'p')
+
+    drawData2(u1colle, y, 'u1')
 
     # print("residual:", residual)
     return 0
 
 def main():
 
-    x, y, u1, u2, inu2, outu2, ps, pp, rho, mu, U = init()
-    u1, u2, inu2, outu2, ps, dx, dy = tscheme(x, y, u1, u2, inu2, outu2, rho, ps, pp, mu, U)
+    x, y, dt, u1, u2, inu2, outu2, ps, pp, rho, mu, U = init()
+    u1colle = np.zeros((1,len(u1[0,:])),dtype=float)
 
-    postProgress(u1, u2, inu2, outu2, ps, x, y)
+    iterNum = 0
+    # main iteration step (SIMPLE Method)
+    for i in range(301):
+        # while(1): # need set with iteration exit condition
+        u1, u2, inu2, outu2, ps, pp, dcolle = tscheme(x[1]-x[0], y[1]-y[0], dt, u1, u2, inu2, outu2, rho, ps, pp, mu, U)
+
+        print("max divergence: ", checkDiv(u1, u2, x[1]-x[0], y[1]-y[0]), "   iterNum: ", iterNum)
+        # print("[15,4] d: ", dcolle, "   iterNum: ", iterNum)
+        # print("semiU1-u1: ", np.max(semiRhoU1/rho-u1), "   iterNum: ", i)
+        # if i == 299:
+        # print("semiU1-u1: ", np.max(semiRhoU1/rho-u1))
+        # print("semiU2-u2: ", np.max(semiRhoU2/rho-u2))
+        u1, u2, outu2 = velBCupdate(u1, u2, U, outu2)
+        iterNum += 1
+        for j in [4,20,50,150,300]:
+            if i == j:
+                u1colle = np.append(u1colle, u1[10,:][np.newaxis, :], axis=0)
+                break
+
+    postProgress(u1, u2, inu2, outu2, ps, x, y, u1colle)
+
+    # postProgress(u1, u2, inu2, outu2, ps, x, y)
 
     return 0
 
