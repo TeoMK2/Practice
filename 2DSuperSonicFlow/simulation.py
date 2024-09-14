@@ -21,233 +21,295 @@ from scipy.optimize import fsolve   #Nonlinear Equation Solver
 #       qx = -kdT/dx     τxx = lmd*(div(V)) + 2μ(du/dx)   e = ev*T
 #       qy = -kdT/dy     τyy = lmd*(div(V)) + 2μ(dv/dy)   μ = μ0*(T/T0)^(3/2)*(T+110)/(T+110)   (Sutherland’s law)
 
-def BCSet(F1, F2, F3, F4, gamma, R, theta):
+class parameter:
 
-    return F1, F2, F3, F4
+    def __init__(self):
+        self.Lx = 0
+        self.Ly = 0
+        self.Ren = 1000
+        self.MaInit = 4
+        self.Prn = 1
 
-def conserve2Origin(F1, F2, F3, F4, gamma, R):
+        self.R = 0
+        self.cv = 0
+        self.cp = 0
+        self.T0 = 0 # reference temperature
+        self.mu0 = 0 # reference dynamic viscosity
 
-    return rho, u1, u2, p, T, Ma
+        self.CourantNum = 0.5
+        self.Cy = 0.6
+        self.Nx = 40
+        self.Ny = 401
+        self.tn = 100
 
-def origin2Conserve(rho, u1, u2, Et, p, tauxx, tauxy, tauyy, qx, qy):
+    def dx(self):
+        return (self.Lx)/self.Nx
+
+    def dy(self):
+        return (self.Ly)/self.Ny
+
+def muCalc(T, T0, mu0):
+    return mu0*(T/T0)**(3/2)*(T0+110)/(T+110)
+
+def kappaCalc(mu, cp, Prn):
+    return mu*cp/Prn
+
+def eCalc(T, cv):
+    return cv*T
+
+def pCalc(rho, T, R):
+    return rho*T*R
+
+def BCupdate(data):
+    data[0,:] = data[1,:]
+    data[-1,:] = data[-2,:]
+    data[:,0] = 0
+    data[:,-1] = data[:,-2]
+    return 0
+
+# TODO: boundray condition
+# def BCSet(U):
+#
+#     return F1, F2, F3, F4
+
+def conserve2Origin(U):
+
+    rho = U[:,0]
+    u1 = U[:,1]/rho
+    u2 = U[:,2]/rho
+    Et = U[:,3]
+    e = Et/rho-np.sqrt(u1**2 + u2**2)
+
+    return rho, u1, u2, e
+
+def origin2Conserve(ppt, rho, u1, u2, e, p, mu, kappa):
+
+    def midVariants(u1, u2, T, mu, kappa, dx, dy):
+
+        tauxx = np.zeros_like(u1)
+        tauxy = np.zeros_like(u1)
+        tauyy = np.zeros_like(u1)
+        qx = np.zeros_like(u1)
+        qy = np.zeros_like(u1)
+
+        for i in range(1,len(tauxx[:,0])-1):
+            for j in range(1,len(tauxx[0,:])-1):
+                tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i+1,j]-u1[i-1,j])/dx - (u2[i,j+1]-u2[i,j-1])/dy )/2
+                tauxy[i,j] =     mu[i,j]*(   (u1[i+1,j]-u1[i-1,j])/dx + (u2[i,j+1]-u2[i,j-1])/dy )/2
+                tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j+1]-u2[i,j-1])/dy - (u1[i+1,j]-u1[i-1,j])/dx )/2
+                qx[i,j] = -kappa[i,j]*(T[i+1,j] - T[i-1,j])/dx/2
+                qy[i,j] = -kappa[i,j]*(T[i,j+1] - T[i,j-1])/dy/2
+        for ppt in ([tauxx, tauxy, tauyy, qx, qy]):
+            BCupdate(ppt)
+
+        return tauxx, tauxy, tauyy, qx, qy
+
+    T = e/ppt.cv
+    Et = rho*(e+np.sqrt(u1**2+u2**2))
+
+    tauxx, tauxy, tauyy, qx, qy = midVariants(u1, u2, T, mu, kappa, ppt.dx(), ppt.dy())
 
     U1 = rho
     U2 = rho*u1
     U3 = rho*u2
     U4 = Et
+    U = np.hstack([U1, U2, U3, U4])
 
     E1 = U2
     E2 = rho*u1**2 + p - tauxx
     E3 = rho*u1*u2 - tauxy
     E4 = (Et + p)*u1 - u1*tauxx - u2*tauxy + qx
+    E = np.hstack([E1, E2, E3, E4])
 
     F1 = U3
     F2 = rho*u1*u2 - tauxy
     F3 = rho*u2**2 + p - tauxy
     F4 = (Et + p)*u2 - u1*tauxy - u2*tauyy + qy
+    F = np.hstack([F1, F2, F3, F4])
 
     return U, E, F
-
-def fluxVariablesSet(F1, F2, F3, F4, rho, gamma):
-
-    return G1, G2, G3, G4
 
 def init():
 
     def parameterInput():
 
-        return gamma, Courant, theta, E, MaInit, Cy
+        ppt = parameter()
 
-    def originalVariablesInit():
+        return ppt
 
-        # Grid parameter
-        Lx = 65
-        Ly = 40
-        Ny = 401
-        eta = np.linspace(0, 1, Ny)
+    def oriVarAllocate():
+
+        x = np.linspace(0, ppt.Lx, ppt.Nx)
+        y = np.linspace(0, ppt.Ly, ppt.Ny)
+
         # Properties
-        rho = np.zeros((1,Ny),dtype=float)
-        u1 = np.zeros((1,Ny),dtype=float)
-        u2 = np.zeros((1,Ny),dtype=float)
-        # u3 = np.zeros((len(x),len(y)),dtype=float)
-        T = np.zeros((1,Ny),dtype=float)
-        p = np.zeros((1,Ny),dtype=float)
+        rho = np.zeros((ppt.Nx,ppt.Ny),dtype=float)
+        u1 = np.zeros((ppt.Nx,ppt.Ny),dtype=float)
+        u2 = np.zeros((ppt.Nx,ppt.Ny),dtype=float)
+        T = np.zeros((ppt.Nx,ppt.Ny),dtype=float)
 
-        return Lx, Ly, eta, rho, u1, u2, T, p
+        return x, y, rho, u1, u2, T
 
-    def flowFieldInit(MaInit, gamma, u1, u2, p, rho, T):
+    def flowFieldInit(ppt, rho, u1, u2, T):
 
-        return p, rho, T, u1, u2, R
+        rho[:,:] = 0
+        u1[:,:] = 0
+        u2[:,:] = 0
+        T[:,:] = 0
 
-    gamma, Courant, theta, E, MaInit, Cy = parameterInput()
-    Lx, Ly, eta, rho, u1, u2, T, p = originalVariablesInit()
-    p, rho, T, u1, u2, R = flowFieldInit(MaInit, gamma, u1, u2, p, rho, T)
+        p = pCalc(rho, T, ppt.R)
+        e = eCalc(T, ppt.cv)
+        mu = muCalc(T, ppt.T0, ppt.mu0)
+        kappa = kappaCalc(mu, ppt.cp, ppt.Prn)
+        return rho, u1, u2, T, p, e, mu, kappa
 
-    F1, F2, F3, F4 = origin2Conserve(rho, u1, u2, p, gamma)
+    ppt = parameterInput()
+    x, y, rho, u1, u2, T = oriVarAllocate()
+    rho, u1, u2, T, p, e, mu, kappa = flowFieldInit(ppt, rho, u1, u2, T)
 
-    return gamma, R, theta, Courant, Cy, Lx, E, Ly, eta, rho, u1, u2, T, p, F1, F2, F3, F4
+    U, E, F = origin2Conserve(ppt, rho, u1, u2, e, p, mu, kappa)
+    return ppt, U, E, F
 
-def tscheme(theta, h, detadx, eta, F1, F2, F3, F4, Courant, gamma, R, Cy):
+def tscheme(ppt, U, E, F):
+
     # MacCormack scheme
 
     def artiVisc(p, U, Cy): #artificial viscosity
-        S = np.zeros_like(U)
-        # for j in range(1,len(S)-1):
-        #     S[j] = Cy * np.abs(p[j+1] - 2*p[j] + p[j-1]) / (p[j+1] + 2*p[j] + p[j-1]) * (U[j+1] - 2*U[j] + U[j-1])
+        # TODO
 
-        for j in range(len(S)):
-            if 0 < j < len(S)-1:
-                S[j] = Cy * np.abs(p[j+1] - 2*p[j] + p[j-1]) / (p[j+1] + 2*p[j] + p[j-1]) * (U[j+1] - 2*U[j] + U[j-1])
-            elif j == 0:
-                S[j] = Cy * np.abs(p[j+2] - 2*p[j+1] + p[j]) / (p[j+2] + 2*p[j+1] + p[j]) * (U[j+2] - 2*U[j+1] + U[j])
-            else:
-                S[j] = 0
+        S = np.zeros_like(U)
+        for j in range(1,len(S)-1):
+            S[j] = Cy * np.abs(p[j+1] - 2*p[j] + p[j-1]) / (p[j+1] + 2*p[j] + p[j-1]) * (U[j+1] - 2*U[j] + U[j-1])
 
         return S
 
-    def preStep(F1, F2, F3, F4, rho, h, detadx, deta):
+    def preStep(E, F, dx, dy):
 
-        G1, G2, G3, G4 = fluxVariablesSet(F1, F2, F3, F4, rho, gamma)
+        predU = np.zeros_like(E)
+        for n in range(E[0,:]):
+            nE, nF = E[:,n], F[:,n]
+            for i in range(len(predU[:,0])-1):
+                for j in range(len(predU[0,:])-1):
+                    predU[:,n][i,j] = (nE[i+1,j] - nE[i,j])/dx + (nF[i,j+1]-nF[i,j])/dy
 
-        predF1 = np.zeros_like(F1)
-        predF2 = np.zeros_like(F2)
-        predF3 = np.zeros_like(F3)
-        predF4 = np.zeros_like(F4)
+        return predU
 
-        for j in range(len(predF1)):
-            if 0 <= j < len(predF1)-1:
-                predF1[j] = -(detadx[j]*(F1[j+1] - F1[j]) + 1/h*(G1[j+1] - G1[j]))/deta
-                predF2[j] = -(detadx[j]*(F2[j+1] - F2[j]) + 1/h*(G2[j+1] - G2[j]))/deta
-                predF3[j] = -(detadx[j]*(F3[j+1] - F3[j]) + 1/h*(G3[j+1] - G3[j]))/deta
-                predF4[j] = -(detadx[j]*(F4[j+1] - F4[j]) + 1/h*(G4[j+1] - G4[j]))/deta
-            if j >= len(predF1)-1:
-                predF1[j] = predF1[j-1]#-(detadx[j]*(F1[j] - F1[j-1]) + 1/h*(G1[j] - G1[j-1]))/deta
-                predF2[j] = predF2[j-1]#-(detadx[j]*(F2[j] - F2[j-1]) + 1/h*(G2[j] - G2[j-1]))/deta
-                predF3[j] = predF3[j-1]#-(detadx[j]*(F3[j] - F3[j-1]) + 1/h*(G3[j] - G3[j-1]))/deta
-                predF4[j] = predF4[j-1]#-(detadx[j]*(F4[j] - F4[j-1]) + 1/h*(G4[j] - G4[j-1]))/deta
+    def corrStep(preE, preF, dx, dy):
 
-        return predF1, predF2, predF3, predF4
+        corrdU = np.zeros_like(preE)
+        for n in range(preE[0,:]):
+            nE, nF = preE[:,n], preF[:,n]
+            for i in range(1,len(corrdU[:,0])):
+                for j in range(1,len(corrdU[0,:])):
+                    corrdU[:,n][i,j] = (nE[i,j] - nE[i-1,j])/dx + (nF[i,j-1]-nF[i,j])/dy
 
-    def correctionStep(preF1, preF2, preF3, preF4, preRho, h, detadx, deta):
-
-        preG1, preG2, preG3, preG4 = fluxVariablesSet(preF1, preF2, preF3, preF4, preRho, gamma)
-
-        cordF1 = np.zeros_like(preF1)
-        cordF2 = np.zeros_like(preF2)
-        cordF3 = np.zeros_like(preF3)
-        cordF4 = np.zeros_like(preF3)
-
-        for j in range(len(cordF1)):
-            if 0 < j <= len(cordF1)-1:
-                cordF1[j] = -(detadx[j]*(preF1[j] - preF1[j-1]) + 1/h*(preG1[j] - preG1[j-1]))/deta
-                cordF2[j] = -(detadx[j]*(preF2[j] - preF2[j-1]) + 1/h*(preG2[j] - preG2[j-1]))/deta
-                cordF3[j] = -(detadx[j]*(preF3[j] - preF3[j-1]) + 1/h*(preG3[j] - preG3[j-1]))/deta
-                cordF4[j] = -(detadx[j]*(preF4[j] - preF4[j-1]) + 1/h*(preG4[j] - preG4[j-1]))/deta
-            if j <= 0:
-                cordF1[j] = -(detadx[j]*(preF1[j+1] - preF1[j]) + 1/h*(preG1[j+1] - preG1[j]))/deta
-                cordF2[j] = -(detadx[j]*(preF2[j+1] - preF2[j]) + 1/h*(preG2[j+1] - preG2[j]))/deta
-                cordF3[j] = -(detadx[j]*(preF3[j+1] - preF3[j]) + 1/h*(preG3[j+1] - preG3[j]))/deta
-                cordF4[j] = -(detadx[j]*(preF4[j+1] - preF4[j]) + 1/h*(preG4[j+1] - preG4[j]))/deta
-
-        return cordF1, cordF2, cordF3, cordF4
+        return corrdU
 
 
+    # Calculate p
+    rho, u1, u2, e = conserve2Origin(U)
+    p = pCalc(rho, e/ppt.cv, ppt.R)
 
-
-    #STEP1: calculate ρ or p
-    #STEP2: calculate u1, u2
-    #STEP3: calculate T
-    # LOOP
-
-    rho, u1, u2, p, T, Ma = conserve2Origin(F1, F2, F3, F4, gamma, R)
-    deta = eta[1]-eta[0]
-    dksi = caldksi(Courant, deta, h, Ma)
+    # Calculate dt
+    dc = np.append(ppt.dy/(np.sqrt(u1**2+u2**2) + np.sqrt(e/ppt.cv)).reshape(-1,1), ppt.dx/(np.sqrt(u1**2+u2**2) + np.sqrt(e/ppt.cv)).reshape(-1,1), axis=1)
+    dt = ppt.CourantNum*np.min(dc)
 
     #pre-step
-    predF1, predF2, predF3, predF4 = preStep(F1, F2, F3, F4, rho, h, detadx, deta)
-    preF1, preF2, preF3, preF4 = (
-        F1 + dksi*predF1 + artiVisc(p, F1, Cy),
-        F2 + dksi*predF2 + artiVisc(p, F2, Cy),
-        F3 + dksi*predF3 + artiVisc(p, F3, Cy),
-        F4 + dksi*predF4 + artiVisc(p, F4, Cy))
+    predU = preStep(E, F, ppt.dx, ppt.dy)
+    preU = np.hstack([U[:,0] + dt*predU[:,0] + artiVisc(p, U[:,0], ppt.Cy),
+                      U[:,1] + dt*predU[:,1] + artiVisc(p, U[:,1], ppt.Cy),
+                      U[:,2] + dt*predU[:,2] + artiVisc(p, U[:,2], ppt.Cy),
+                      U[:,3] + dt*predU[:,3] + artiVisc(p, U[:,3], ppt.Cy)])
 
-    preRho, preu1, preu2, preP, preT, preMa = conserve2Origin(preF1, preF2, preF3, preF4, gamma, R)
+    preRho, preu1, preu2, pree = conserve2Origin(preU)
+    preP = pCalc(preRho, pree/ppt.cv, ppt.R)
+    mu = muCalc(pree/ppt.cv, ppt.T0, ppt.mu0)
+    kappa = kappaCalc(mu, ppt.cp, ppt.Prn)
+    __, preE, preF = origin2Conserve(ppt, preRho, preu1, preu2, pree, preP, mu, kappa)
 
     # #correct-step
-    cordF1, cordF2, cordF3, cordF4 = correctionStep(preF1, preF2, preF3, preF4, preRho, h, detadx, deta)
-    newF1, newF2, newF3, newF4 = (
-        F1 + (predF1 + cordF1)*0.5*dksi+ artiVisc(preP, preF1, Cy),
-        F2 + (predF2 + cordF2)*0.5*dksi+ artiVisc(preP, preF2, Cy),
-        F3 + (predF3 + cordF3)*0.5*dksi+ artiVisc(preP, preF3, Cy),
-        F4 + (predF4 + cordF4)*0.5*dksi+ artiVisc(preP, preF4, Cy))
+    corrdU = corrStep(preE, preF, ppt.dx, ppt.dy)
+    newU = np.hstack([U[:,0] + dt*(predU[:,0] + corrdU[:,0])/2 + artiVisc(preP, preU[:,0], ppt.Cy),
+                       U[:,1] + dt*(predU[:,1] + corrdU[:,1])/2 + artiVisc(preP, preU[:,1], ppt.Cy),
+                       U[:,2] + dt*(predU[:,2] + corrdU[:,2])/2 + artiVisc(preP, preU[:,2], ppt.Cy),
+                       U[:,3] + dt*(predU[:,3] + corrdU[:,3])/2 + artiVisc(preP, preU[:,3], ppt.Cy)])
 
-    newF1, newF2, newF3, newF4 = BCSet(newF1, newF2, newF3, newF4, gamma, R, theta)
+    # TODO: boundray condition
+    # newU = BCSet(newU)
 
-    return newF1, newF2, newF3, newF4, dksi
+    return newU, dt
 
-def postProgress(xSet, E, eta, F1, F2, F3, F4, gamma, R):
-
-    rho, u1, u2, p, T, Ma = conserve2Origin(F1, F2, F3, F4, gamma, R)
-
-    def printData():
-        print("------------solve complete.------------")
-        # print("iteration or temporal advancement times:", timeStepNumb)
-        # print("total physical space:", xSet)
-
-        print("---------------------------------------")
-        # print("residual:", residual)
-        # print("ρ:", rho)
-        # print("u1:", u1)
-        # print("T:", T)
-        # print("p", p)
-        # print("Ma", Ma)
-        # print("F1:", F1)
-        return
-
-    def drawData(x, y, data, name):
-        plt.figure()
-        # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
-        pic = plt.contourf(x,y,data,alpha=0.8,cmap='jet')
-        # plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
-        plt.colorbar(pic)
-        plt.xlabel('x (m)')
-        plt.ylabel('y (m)')
-        plt.title('Evolution of ' + name)
-        # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
-        plt.show()
-        return
-
-    # printData()
-
-    drawData(x, y, Ma, 'Ma')
-    drawData(x, y, rho, 'rho')
-    drawData(x, y, u1, 'u1')
-    drawData(x, y, u2, 'u2')
-    drawData(x, y, T, 'T')
-    drawData(x, y, p, 'p')
-
-    return 0
+# def postProgress(xSet, E, eta, F1, F2, F3, F4, gamma, R):
+#
+#     rho, u1, u2, p, T, Ma = conserve2Origin(F1, F2, F3, F4, gamma, R)
+#
+#     def printData():
+#         print("------------solve complete.------------")
+#         # print("iteration or temporal advancement times:", timeStepNumb)
+#         # print("total physical space:", xSet)
+#
+#         print("---------------------------------------")
+#         # print("residual:", residual)
+#         # print("ρ:", rho)
+#         # print("u1:", u1)
+#         # print("T:", T)
+#         # print("p", p)
+#         # print("Ma", Ma)
+#         # print("F1:", F1)
+#         return
+#
+#     def drawData(x, y, data, name):
+#         plt.figure()
+#         # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
+#         pic = plt.contourf(x,y,data,alpha=0.8,cmap='jet')
+#         # plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
+#         plt.colorbar(pic)
+#         plt.xlabel('x (m)')
+#         plt.ylabel('y (m)')
+#         plt.title('Evolution of ' + name)
+#         # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
+#         plt.show()
+#         return
+#
+#     # printData()
+#
+#     drawData(x, y, Ma, 'Ma')
+#     drawData(x, y, rho, 'rho')
+#     drawData(x, y, u1, 'u1')
+#     drawData(x, y, u2, 'u2')
+#     drawData(x, y, T, 'T')
+#     drawData(x, y, p, 'p')
+#
+#     return 0
 
 def main():
 
-     = init()
+    ppt, U, E, F = init()
     xSet = np.zeros(1,dtype=float)
     iterNumb = 0
+    t = 0
 
-    newF1, newF2, newF3, newF4, dksi = tscheme(theta, h, detadx, eta, F1[len(F1)-1,:], F2[len(F2)-1,:], F3[len(F3)-1,:],F4[len(F4)-1,:], Courant, gamma, R, Cy)
+    while(t < ppt.tn):
+        newU, dt = tscheme(ppt, U, E, E)
 
-    F1 = np.append(F1, newF1[np.newaxis,:], axis=0)
-    F2 = np.append(F2, newF2[np.newaxis,:], axis=0)
-    F3 = np.append(F3, newF3[np.newaxis,:], axis=0)
-    F4 = np.append(F4, newF4[np.newaxis,:], axis=0)
+    # F1 = np.append(F1, newF1[np.newaxis,:], axis=0)
+    # F2 = np.append(F2, newF2[np.newaxis,:], axis=0)
+    # F3 = np.append(F3, newF3[np.newaxis,:], axis=0)
+    # F4 = np.append(F4, newF4[np.newaxis,:], axis=0)
 
-    xSet = np.append(xSet, xSet[-1] + dksi)
-    iterNumb += 1
 
-    if (iterNumb >= 1000): #defensive design
-        break
+        t += dt
+        rho, u1, u2, e = conserve2Origin(newU)
+        p = pCalc(rho,e/ppt.cv,ppt.R)
+        mu = muCalc(e/ppt.cv, ppt.T0, ppt.mu0)
+        kappa = kappaCalc(mu, ppt.cp, ppt.Prn)
 
-    postProgress(xSet, E, eta, F1, F2, F3, F4, gamma, R)
+        if (iterNumb >= 1000): #defensive design
+            break
+
+        U, E, E = origin2Conserve(ppt, rho, u1, u2, e, p, mu, kappa)
+
+# postProgress(xSet, E, eta, F1, F2, F3, F4, gamma, R)
 
     return 0
 
