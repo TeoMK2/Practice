@@ -66,100 +66,177 @@ class parameter:
     def delta(self):
         return 5*self.Lx/np.sqrt(self.Ren)
 
-def muCalc(T, Tr, mu0):
-    return mu0*(T/Tr)**(3*0.5)*(Tr+110)/(T+110)
-def kappaCalc(mu, cp, Prn):
-    return mu*cp/Prn
-def eCalc(T, cv):
-    return cv*T
+def muCalc(ppt, T):
+    return ppt.mu0*(T/ppt.Tr)**(3*0.5)*(ppt.Tr+110)/(T+110)
+def kappaCalc(ppt, mu):
+    return mu*ppt.cp/ppt.Prn
+def eCalc(ppt, T):
+    return ppt.cv*T
 def rhoCalc(p, T, R):
     return p/T/R
-
-def BCupdate(data):
-    data[0,:] = data[1,:]
-    data[-1,:] = data[-2,:]
-    data[:,0] = 0
-    data[:,-1] = data[:,-2]
-    return 0
 
 def BCSet(ppt, U):
     rho, u1, u2, e = conserve2Origin(U)
     T = e/ppt.cv
     p = rho*ppt.R*T
 
-    u1[0,:] , u2[0,:] , p[0,:] ,T[0,:]  = ppt.Uin            ,                   0,           ppt.pin, ppt.Tin      # inlet
-    u1[:,-1], u2[:,-1], p[:,-1],T[:,-1] = ppt.Uin            ,                   0,           ppt.pin, ppt.Tin     # upper boundary
-    u1[:,0] , u2[:,0] , p[:,0] ,T[:,0]  = 0                  ,                   0, 2*p[:,-1]-p[:,-2], ppt.Tw   # wall
-    u1[-1,:], u2[-1,:], p[-1,:],T[-1,:] = 2*u1[-2,:]-u1[-3,:], 2*u2[-2,:]-u2[-3,:], 2*p[:,-2]-p[:,-3], 2*T[-2,:]-T[-3,:]   # outlet
+    u1[0,:] , u2[0,:] , p[0,:] ,T[0,:]  = ppt.Uin            , 0                  , ppt.pin          , ppt.Tin      # inlet
+    u1[-1,:], u2[-1,:], p[-1,:],T[-1,:] = 2*u1[-2,:]-u1[-3,:], 2*u2[-2,:]-u2[-3,:], 2*p[-2,:]-p[-3,:], 2*T[-2,:]-T[-3,:]   # outlet
+    u1[:,-1], u2[:,-1], p[:,-1],T[:,-1] = ppt.Uin            , 0                  , ppt.pin          , ppt.Tin     # upper boundary
+    u1[:,0] , u2[:,0] , p[:,0] ,T[:,0]  = 0                  , 0                  , 2*p[:,-1]-p[:,-2], ppt.Tw   # wall
 
+    rho = rhoCalc(p, T, ppt.R)
     U1 = rho
     U2 = rho*u1
     U3 = rho*u2
-    U4 = rho*(e/ppt.cv+np.sqrt(u1**2+u2**2)/2)
+    U4 = rho*(T*ppt.cv+np.sqrt(u1**2+u2**2)/2)
 
-    return np.hstack([U1, U2, U3, U4])
+    return [U1, U2, U3, U4]
 
 def conserve2Origin(U):
 
-    rho = U[:,0]
-    u1 = U[:,1]/rho
-    u2 = U[:,2]/rho
-    e = U[:,3]/rho-np.sqrt(u1**2 + u2**2)/2
+    rho = U[0]
+    u1 = U[1]/rho
+    u2 = U[2]/rho
+    e = U[3]/rho-np.sqrt(u1**2 + u2**2)/2
 
     return rho, u1, u2, e
 
-def origin2Conserve(ppt, rho, u1, u2, e, p, mu, kappa, direction):
+def origin2Conserve(ppt, rho, u1, u2, e, mu, kappa, direction):
 
     def midVariants1(u1, u2, T, mu, kappa, dx, dy, direction):
         tauxx = np.zeros_like(u1)
         tauxy = np.zeros_like(u1)
         qx = np.zeros_like(u1)
-        for i in range(1,len(tauxx[:,0])-1):
-            for j in range(1,len(tauxx[0,:])-1):
-                if direction == 1:
-                    tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i+1,j]-u1[i,j])/dx - (u2[i,j+1]-u2[i,j-1])/dy*0.5 )
-                    tauxy[i,j] =     mu[i,j]*(   (u1[i+1,j]-u1[i,j])/dx + (u2[i,j+1]-u2[i,j-1])/dy*0.5 )
-                    qx[i,j] = -kappa[i,j]*(T[i+1,j] - T[i,j])/dx
-                elif direction == -1:
-                    tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i,j]-u1[i-1,j])/dx - (u2[i,j+1]-u2[i,j-1])/dy*0.5 )
-                    tauxy[i,j] =     mu[i,j]*(   (u1[i,j]-u1[i-1,j])/dx + (u2[i,j+1]-u2[i,j-1])/dy*0.5 )
-                    qx[i,j] = -kappa[i,j]*(T[i,j] - T[i-1,j])/dx
-                else:
-                    print("error direction vector detected.")
-                    sys.exit()
-        for property in ([tauxx, tauxy, qx]):
-            BCupdate(property)
+
+        if direction == 1:
+            for j in range(len(tauxx[0,:])):
+                for i in range(len(tauxx[:,0])):
+                    if i < len(tauxx[:,0])-1:
+                        if j == 0:                      # i=[0,-2], j=0
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i+1,j]-u1[i,j])/dx - (u2[i,j+1]-u2[i,j])/dy )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i+1,j]-u2[i,j])/dx + (u1[i,j+1]-u1[i,j])/dy )
+                        elif j == len(tauxx[0,:])-1:    # i=[0,-2], j=-1
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i+1,j]-u1[i,j])/dx - (u2[i,j]-u2[i,j-1])/dy )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i+1,j]-u2[i,j])/dx + (u1[i,j]-u1[i,j-1])/dy )
+                        else:                           # i=[0,-2], j=[1,-2] normal case
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i+1,j]-u1[i,j])/dx - (u2[i,j+1]-u2[i,j-1])/dy*0.5 )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i+1,j]-u2[i,j])/dx + (u1[i,j+1]-u1[i,j-1])/dy*0.5 )
+                        qx[i,j] = -kappa[i,j]*(T[i+1,j] - T[i,j])/dx
+                    elif i == len(tauxx[:,0])-1:
+                        if j == 0:                      # i=-1, j=0
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i,j]-u1[i-1,j])/dx - (u2[i,j+1]-u2[i,j])/dy )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i,j]-u2[i-1,j])/dx + (u1[i,j+1]-u1[i,j])/dy )
+                        elif j == len(tauxx[0,:])-1:    # i=-1, j=-1
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i,j]-u1[i-1,j])/dx - (u2[i,j]-u2[i,j-1])/dy )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i,j]-u2[i-1,j])/dx + (u1[i,j]-u1[i,j-1])/dy )
+                        else:                           # i=-1, j=[1,-2]
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i,j]-u1[i-1,j])/dx - (u2[i,j+1]-u2[i,j-1])/dy*0.5 )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i,j]-u2[i-1,j])/dx + (u1[i,j+1]-u1[i,j-1])/dy*0.5 )
+                        qx[i,j] = -kappa[i,j]*(T[i,j] - T[i-1,j])/dx
+
+        elif direction == -1:
+            for j in range(len(tauxx[0,:])):
+                for i in range(len(tauxx[:,0])):
+                    if i > 0:
+                        if j == 0:                      # i=[1,-1], j=0
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i,j]-u1[i-1,j])/dx - (u2[i,j+1]-u2[i,j])/dy )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i,j]-u2[i-1,j])/dx + (u1[i,j+1]-u1[i,j])/dy )
+                        elif j == len(tauxx[0,:])-1:    # i=[1,-1], j=-1
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i,j]-u1[i-1,j])/dx - (u2[i,j]-u2[i,j-1])/dy )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i,j]-u2[i-1,j])/dx + (u1[i,j]-u1[i,j-1])/dy )
+                        else:                           # i=[1,-1], j=[1,-2] normal case
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i,j]-u1[i-1,j])/dx - (u2[i,j+1]-u2[i,j-1])/dy*0.5 )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i,j]-u2[i-1,j])/dx + (u1[i,j+1]-u1[i,j-1])/dy*0.5 )
+                        qx[i,j] = -kappa[i,j]*(T[i,j] - T[i-1,j])/dx
+                    elif i == 0:
+                        if j == 0:                      # i=0, j=0
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i+1,j]-u1[i,j])/dx - (u2[i,j+1]-u2[i,j])/dy )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i+1,j]-u2[i,j])/dx + (u1[i,j+1]-u1[i,j])/dy )
+                        elif j == len(tauxx[0,:])-1:    # i=0, j=-1
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i+1,j]-u1[i,j])/dx - (u2[i,j]-u2[i,j-1])/dy )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i+1,j]-u2[i,j])/dx + (u1[i,j]-u1[i,j-1])/dy )
+                        else:                           # i=0, j=[1,-2]
+                            tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i+1,j]-u1[i,j])/dx - (u2[i,j+1]-u2[i,j-1])/dy*0.5 )
+                            tauxy[i,j] =     mu[i,j]*(   (u2[i+1,j]-u2[i,j])/dx + (u1[i,j+1]-u1[i,j-1])/dy*0.5 )
+                        qx[i,j] = -kappa[i,j]*(T[i+1,j] - T[i,j])/dx
+        else:
+            print("error direction vector detected.")
+            sys.exit()
+
         return tauxx, tauxy, qx
 
     def midVariants2(u1, u2, T, mu, kappa, dx, dy, direction):
         tauyy = np.zeros_like(u2)
         tauxy = np.zeros_like(u2)
         qy = np.zeros_like(u2)
-        for i in range(1,len(tauyy[:,0])-1):
-            for j in range(1,len(tauyy[0,:])-1):
-                if direction == 1:
-                    tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j+1]-u2[i,j])/dy - (u1[i+1,j]-u1[i-1,j])/dx*0.5 )
-                    tauxy[i,j] =     mu[i,j]*(   (u2[i,j+1]-u2[i,j])/dy + (u1[i+1,j]-u1[i-1,j])/dx*0.5 )
-                    qy[i,j] = -kappa[i,j]*(T[i,j+1] - T[i,j])/dy
-                elif direction == -1:
-                    tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j]-u2[i,j-1])/dy - (u1[i+1,j]-u1[i-1,j])/dx*0.5 )
-                    tauxy[i,j] =     mu[i,j]*(   (u2[i,j]-u2[i,j-1])/dy + (u1[i+1,j]-u1[i-1,j])/dx*0.5 )
-                    qy[i,j] = -kappa[i,j]*(T[i,j] - T[i,j-1])/dy
-                else:
-                    print("error direction vector detected.")
-                    sys.exit()
-        for property in ([tauyy, tauxy, qy]):
-            BCupdate(property)
+
+        if direction == 1:
+            for i in range(len(tauyy[:,0])):
+                for j in range(len(tauyy[0,:])):
+                    if j < len(tauyy[0,:])-1:
+                        if i == 0:                      # i=0, j=[0,-2]
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j+1]-u2[i,j])/dy - (u1[i+1,j]-u1[i,j])/dx )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j+1]-u1[i,j])/dy + (u2[i+1,j]-u2[i,j])/dx )
+                        elif i == len(tauyy[:,0])-1:    # i=-1,j=[0,-2]
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j+1]-u2[i,j])/dy - (u1[i,j]-u1[i-1,j])/dx )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j+1]-u1[i,j])/dy + (u2[i,j]-u2[i-1,j])/dx )
+                        else:                           # i=[1,-2], j=[0,-2] normal case
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j+1]-u2[i,j])/dy - (u1[i+1,j]-u1[i-1,j])/dx*0.5 )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j+1]-u1[i,j])/dy + (u2[i+1,j]-u2[i-1,j])/dx*0.5 )
+                        qy[i,j] = -kappa[i,j]*(T[i,j+1] - T[i,j])/dy
+                    elif j == len(tauyy[0,:])-1:
+                        if i == 0:                      # i=0, j=-1
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j]-u2[i,j-1])/dy - (u1[i+1,j]-u1[i,j])/dx )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j]-u1[i,j-1])/dy + (u2[i+1,j]-u2[i,j])/dx )
+                        elif i == len(tauyy[:,0])-1:    # i=-1, j=-1
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j]-u2[i,j-1])/dy - (u1[i,j]-u1[i-1,j])/dx )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j]-u1[i,j-1])/dy + (u2[i,j]-u2[i-1,j])/dx )
+                        else:                           # i=[1,-2], j=-1
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j]-u2[i,j-1])/dy - (u1[i+1,j]-u1[i-1,j])/dx*0.5 )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j]-u1[i,j-1])/dy + (u2[i+1,j]-u2[i-1,j])/dx*0.5 )
+                        qy[i,j] = -kappa[i,j]*(T[i,j] - T[i,j-1])/dy
+
+        elif direction == -1:
+            for i in range(len(tauyy[:,0])):
+                for j in range(len(tauyy[0,:])):
+                    if j > 0:
+                        if i == 0:                      # i=0, j=[1,-1]
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j]-u2[i,j-1])/dy - (u1[i+1,j]-u1[i,j])/dx )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j]-u1[i,j-1])/dy + (u2[i+1,j]-u2[i,j])/dx )
+                        elif i == len(tauyy[:,0])-1:    # i=-1,j=[1,-1]
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j]-u2[i,j-1])/dy - (u1[i,j]-u1[i-1,j])/dx )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j]-u1[i,j-1])/dy + (u2[i,j]-u2[i-1,j])/dx )
+                        else:                           # i=[1,-2], j=[1,-1] normal case
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j]-u2[i,j-1])/dy - (u1[i+1,j]-u1[i-1,j])/dx*0.5 )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j]-u1[i,j-1])/dy + (u2[i+1,j]-u2[i-1,j])/dx*0.5 )
+                        qy[i,j] = -kappa[i,j]*(T[i,j] - T[i,j-1])/dy
+                    elif j == 0:
+                        if i == 0:                      # i=0, j=0
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j+1]-u2[i,j])/dy - (u1[i+1,j]-u1[i,j])/dx )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j+1]-u1[i,j])/dy + (u2[i+1,j]-u2[i,j])/dx )
+                        elif i == len(tauyy[:,0])-1:    # i=-1, j=0
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j+1]-u2[i,j])/dy - (u1[i,j]-u1[i-1,j])/dx )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j+1]-u1[i,j])/dy + (u2[i,j]-u2[i-1,j])/dx )
+                        else:                           # i=[1,-2], j=0
+                            tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j+1]-u2[i,j])/dy - (u1[i+1,j]-u1[i-1,j])/dx*0.5 )
+                            tauxy[i,j] =     mu[i,j]*(   (u1[i,j+1]-u1[i,j])/dy + (u2[i+1,j]-u2[i-1,j])/dx*0.5 )
+                        qy[i,j] = -kappa[i,j]*(T[i,j+1] - T[i,j])/dy
+        else:
+            print("error direction vector detected.")
+            sys.exit()
+
         return tauyy, tauxy, qy
 
     T = e/ppt.cv
     Et = rho*(e+np.sqrt(u1**2+u2**2)/2)
+    p = rho*ppt.R*T
 
     U1 = rho
     U2 = rho*u1
     U3 = rho*u2
     U4 = Et
-    U = np.hstack([U1, U2, U3, U4])
+    U = [U1, U2, U3, U4]
 
     # difference at contrary direction with the difference direction of MacCormack step
     # this processing aim to maintain second-order spatial accuracy in temporal advancement
@@ -168,14 +245,14 @@ def origin2Conserve(ppt, rho, u1, u2, e, p, mu, kappa, direction):
     E2 = rho*u1**2 + p - tauxx
     E3 = rho*u1*u2 - tauxy
     E4 = (Et + p)*u1 - u1*tauxx - u2*tauxy + qx
-    E = np.hstack([E1, E2, E3, E4])
+    E = [E1, E2, E3, E4]
 
     tauyy, tauxy, qy = midVariants2(u1, u2, T, mu, kappa, ppt.dx(), ppt.dy(), direction)
     F1 = U3
     F2 = rho*u1*u2 - tauxy
     F3 = rho*u2**2 + p - tauxy
     F4 = (Et + p)*u2 - u1*tauxy - u2*tauyy + qy
-    F = np.hstack([F1, F2, F3, F4])
+    F = [F1, F2, F3, F4]
 
     return U, E, F
 
@@ -195,20 +272,28 @@ def init():
 
     def flowFieldInit(ppt, p, u1, u2, T):
 
-        p[:,:] = 0
-        u1[:,:] = 0
+        p[:,:] = ppt.pin
+        u1[:,:] = ppt.Uin
         u2[:,:] = 0
-        T[:,:] = 0
+        T[:,:] = ppt.Tin
 
         # boundary condition
-        u1[0,:], u2[0,:], p[0,:], T[0,:] = ppt.Uin, 0, ppt.pin, ppt.Tin # inlet
-        u1[:,-1], u2[:,-1], p[:,-1], T[:,-1] = ppt.Uin, 0, ppt.pin, ppt.Tin # upper boundary
-        T[:,0], u1[:,0], u2[:,0] = ppt.Tw, 0, 0                         # wall
+        # upper boundary
+        u1[:,-1] = ppt.Uin
+        u2[:,-1] = 0
+        p[:,-1] = ppt.pin
+        T[:,-1] = ppt.Tin
+
+        # wall boundary
+        u1[:,0] = 0
+        u2[:,0] = 0
+        p[:,0] = 2*p[:,-1]-p[:,-2]
+        T[:,0] = ppt.Tw
 
         rho = rhoCalc(p, T, ppt.R)
-        e = eCalc(T, ppt.cv)
-        mu = muCalc(T, ppt.Tr, ppt.mu0)
-        kappa = kappaCalc(mu, ppt.cp, ppt.Prn)
+        e = eCalc(ppt, T)
+        mu = muCalc(ppt, T)
+        kappa = kappaCalc(ppt, mu)
         return rho, u1, u2, T, p, e, mu, kappa
 
     ppt = parameter()
@@ -217,12 +302,13 @@ def init():
 
     return ppt, rho, u1, u2, T, p, e, mu, kappa
 
-def tscheme(ppt, rho, u1, u2, T, p, e, mu, kappa):
+def tscheme(ppt, rho, u1, u2, e, mu, kappa):
 
     # MacCormack scheme
-    def dtCalc(mu, rho, T, gamma, Prn, dx, dy, K):
+    def dtCalc(mu, rho, T, gamma, R, Prn, dx, dy, K):
         nu = np.max(4/3*(gamma*mu/Prn)/rho)
-        dt = 1/(np.abs(u1)/dx + np.abs(u2)/dy + np.sqrt(T)*np.sqrt(1/dx**2 + 1/dy**2) + 2*nu*(1/dx**2 + 1/dy**2))
+        a = np.sqrt(gamma*R*T)
+        dt = 1/(np.abs(u1)/dx + np.abs(u2)/dy + a*np.sqrt(1/dx**2 + 1/dy**2) + 2*nu*(1/dx**2 + 1/dy**2))
         return np.min(K*dt)
 
     def artiVisc(p, U, Cy): #artificial viscosity
@@ -234,46 +320,48 @@ def tscheme(ppt, rho, u1, u2, T, p, e, mu, kappa):
         return S
 
     def preStep(E, F, dx, dy):
-        predU = np.zeros_like(E)
-        for n in range(E[0,:]):
-            nE, nF = E[:,n], F[:,n]
-            for i in range(len(predU[:,0])-1):
-                for j in range(len(predU[0,:])-1):
-                    predU[:,n][i,j] = -((nE[i+1,j] - nE[i,j])/dx + (nF[i,j+1]-nF[i,j])/dy)
+        predU = []
+        for n in range(len(E[:])):
+            nU, nE, nF = np.zeros_like(E[n]), E[n], F[n]
+            for i in range(len(nU[:,0])-1):
+                for j in range(len(nU[0,:])-1):
+                    nU[i,j] = -((nE[i+1,j] - nE[i,j])/dx + (nF[i,j+1]-nF[i,j])/dy)
+            predU.append(nU)
         return predU
 
     def corrStep(preE, preF, dx, dy):
-        corrdU = np.zeros_like(preE)
-        for n in range(preE[0,:]):
-            nE, nF = preE[:,n], preF[:,n]
-            for i in range(1,len(corrdU[:,0])):
-                for j in range(1,len(corrdU[0,:])):
-                    corrdU[:,n][i,j] = -((nE[i,j] - nE[i-1,j])/dx + (nF[i,j-1]-nF[i,j])/dy)
+        corrdU = []
+        for n in range(len(preE[:])):
+            nU, nE, nF = np.zeros_like(E[n]), E[n], F[n]
+            for i in range(1,len(nU[:,0])):
+                for j in range(1,len(nU[0,:])):
+                    nU[i,j] = -((nE[i,j] - nE[i-1,j])/dx + (nF[i,j-1]-nF[i,j])/dy)
+            corrdU.append(nU)
         return corrdU
 
-
     # Calculate dt
-    dt = dtCalc(mu, rho, T, ppt.gamma, ppt.Prn, ppt.dx(), ppt.dy(), ppt.CourantNum)
-    U, E, F = origin2Conserve(ppt, rho, u1, u2, e, p, mu, kappa,-1)  #prepare for MacCormack pre-step
-    #pre-step
+    dt = dtCalc(mu, rho, e/ppt.cv, ppt.gamma, ppt.R, ppt.Prn, ppt.dx(), ppt.dy(), ppt.CourantNum)
+    U, E, F = origin2Conserve(ppt, rho, u1, u2, e, mu, kappa, -1)  #prepare for MacCormack pre-step
 
+    # pre-step
     predU = preStep(E, F, ppt.dx(), ppt.dy())
-    preU = np.hstack([U[:,0] + dt*predU[:,0] + artiVisc(p, U[:,0], ppt.Cy),
-                      U[:,1] + dt*predU[:,1] + artiVisc(p, U[:,1], ppt.Cy),
-                      U[:,2] + dt*predU[:,2] + artiVisc(p, U[:,2], ppt.Cy),
-                      U[:,3] + dt*predU[:,3] + artiVisc(p, U[:,3], ppt.Cy)])
-    preRho, preu1, preu2, pree = conserve2Origin(preU)
-    preP = preRho*ppt.R*pree/ppt.cv
-    mu = muCalc(pree/ppt.cv, ppt.Tr, ppt.mu0)
-    kappa = kappaCalc(mu, ppt.cp, ppt.Prn)
-    __, preE, preF = origin2Conserve(ppt, preRho, preu1, preu2, pree, preP, mu, kappa,1)
+    preU = []
+    # p = rho*ppt.R*e/ppt.cv
+    for n in range(len(U)):
+        preU.append(U[n] + dt*predU[n])# + artiVisc(p, U[n], ppt.Cy))
 
-    # #correct-step
+    preRho, preu1, preu2, pree = conserve2Origin(preU)
+
+    mu = muCalc(ppt, pree/ppt.cv)
+    kappa = kappaCalc(ppt, mu)
+    __, preE, preF = origin2Conserve(ppt, preRho, preu1, preu2, pree, mu, kappa, 1)
+
+    # correct-step
     corrdU = corrStep(preE, preF, ppt.dx(), ppt.dy())
-    newU = np.hstack([U[:,0] + dt*(predU[:,0] + corrdU[:,0])*0.5 + artiVisc(preP, preU[:,0], ppt.Cy),
-                      U[:,1] + dt*(predU[:,1] + corrdU[:,1])*0.5 + artiVisc(preP, preU[:,1], ppt.Cy),
-                      U[:,2] + dt*(predU[:,2] + corrdU[:,2])*0.5 + artiVisc(preP, preU[:,2], ppt.Cy),
-                      U[:,3] + dt*(predU[:,3] + corrdU[:,3])*0.5 + artiVisc(preP, preU[:,3], ppt.Cy)])
+    newU = []
+    # preP = preRho*ppt.R*pree/ppt.cv
+    for n in range(len(U)):
+        newU.append(U[n] + dt*(predU[n] + corrdU[n])*0.5)# + artiVisc(preP, preU[n], ppt.Cy))
 
     newU = BCSet(ppt, newU)
     return newU, dt
@@ -324,22 +412,21 @@ def tscheme(ppt, rho, u1, u2, T, p, e, mu, kappa):
 def main():
 
     ppt, rho, u1, u2, T, p, e, mu, kappa = init()
-    xSet = np.zeros(1,dtype=float)
     iterNumb = 0
     t = 0
 
     while(t < ppt.tn):
-        newU, dt = tscheme(ppt, rho, u1, u2, T, p, e, mu, kappa)
+        newU, dt = tscheme(ppt, rho, u1, u2, e, mu, kappa)
 
         t += dt
         rho, u1, u2, e = conserve2Origin(newU)
-        T = e/ppt.cv
-        p = rho*ppt.R*e
-        mu = muCalc(e/ppt.cv, ppt.Tr, ppt.mu0)
-        kappa = kappaCalc(mu, ppt.cp, ppt.Prn)
-
+        mu = muCalc(ppt, e/ppt.cv)
+        kappa = kappaCalc(ppt, mu)
+        if (iterNumb == 10):
+            print("1")
         if (iterNumb >= 1000): #defensive design
             break
+        iterNumb += 1
 
 # postProgress(xSet, E, eta, F1, F2, F3, F4, gamma, R)
 
