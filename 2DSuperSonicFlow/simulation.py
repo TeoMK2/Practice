@@ -31,7 +31,7 @@ class parameter:
         self.Lx = 0.00001   #m
 
         # Physical parameters
-        self.MaIn = 4
+        self.MaIn = 4      #case: Ma=25, Re=1000*25/4, Nx,Ny=41*(25/4)**(9/4)
         self.Prn = 0.71
         self.R = 287    #J/kg/K
         self.gamma = 1.4
@@ -46,14 +46,14 @@ class parameter:
         self.Cy = 0.6
         self.Nx = 71
         self.Ny = 71
-        self.tn = 4000
+        self.tn = 10000  # Maximum iteration times
 
         # Inlet condition
         self.pin = 101325.0 # N/m^2
         self.Tin = 288.16   # equal to Tw (K)
         self.Uin = self.MaIn*np.sqrt(self.gamma*self.Tin*self.R)   # m/s
         self.rhoin = self.pin/self.R/self.Tin
-        self.Ren =  self.rhoin*self.Uin*self.Lx/self.mu0    #1000
+        self.Ren = self.rhoin*self.Uin*self.Lx/self.mu0    #1000
 
         self.Ly = 5*self.delta()
 
@@ -71,8 +71,21 @@ def muCalc(ppt, T):
 def kappaCalc(ppt, mu):
     return mu*ppt.cp/ppt.Prn
 
-def resiCalc(ppt, rho, newRho, dt):
-    return np.max(newRho-rho)/dt/ppt.rhoin*(ppt.Lx/ppt.Uin)
+def converge(ppt, rho, newRho, dt, iterNum):
+    def resiCalc(ppt, rho, newRho, dt):
+        return np.max(newRho-rho)/dt/ppt.rhoin*(ppt.Lx/ppt.Uin)
+    flag = 0
+    residual = resiCalc(ppt, rho, newRho, dt)
+
+    if iterNum%10 == 0:
+        print("iteration times: ", iterNum)
+        print("residual: ", residual)
+    if residual <= 1e-8:
+        flag = 1
+    if iterNum >= ppt.tn:
+        flag = 2
+
+    return flag
 
 def BCSet(ppt, U):
     rho, u1, u2, e = conserve2Origin(U)
@@ -82,13 +95,14 @@ def BCSet(ppt, U):
     u1[0 , :] , u2[0 , :] , p[0 , :] ,T[0 , :] = ppt.Uin            , 0                  , ppt.pin          , ppt.Tin              # inlet
     u1[-1, :] , u2[-1, :] , p[-1, :] ,T[-1, :] = 2*u1[-2,:]-u1[-3,:], 2*u2[-2,:]-u2[-3,:], 2*p[-2,:]-p[-3,:], 2*T[-2,:]-T[-3,:]    # outlet
     u1[: ,-1] , u2[: ,-1] , p[: ,-1] ,T[: ,-1] = ppt.Uin            , 0                  , ppt.pin          , ppt.Tin              # upper boundary
-    u1[: , 0] , u2[: , 0] , p[: , 0] ,T[: , 0] = 0                  , 0                  , 2*p[: ,1]-p[: ,2], ppt.Tw                 # wall
+    u1[: , 0] , u2[: , 0] , p[: , 0] ,T[: , 0] = 0                  , 0                  , 2*p[: ,1]-p[: ,2], ppt.Tw               # wall
+    u1[0 , 0] , u2[0 , 0] , p[0 , 0] ,T[0 , 0] = 0                  , 0                  , ppt.pin          , ppt.Tin              #Leading edge point
 
     rho = p/T/ppt.R
     U1 = rho
     U2 = rho*u1
     U3 = rho*u2
-    U4 = rho*(T*ppt.cv + np.sqrt(u1**2 + u2**2)/2)
+    U4 = rho*(T*ppt.cv + (u1**2 + u2**2)/2)
 
     return [U1, U2, U3, U4]
 
@@ -97,7 +111,7 @@ def conserve2Origin(U):
     rho = U[0]
     u1 = U[1]/U[0]
     u2 = U[2]/U[0]
-    e = U[3]/U[0] - np.sqrt(u1**2 + u2**2)/2
+    e = U[3]/U[0] - (u1**2 + u2**2)/2
 
     return rho, u1, u2, e
 
@@ -134,7 +148,7 @@ def origin2Conserve(ppt, rho, u1, u2, e, mu, kappa, direction):
                         else:                           # i=-1, j=[1,-2]
                             tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i,j]-u1[i-1,j])/dx - (u2[i,j+1]-u2[i,j-1])/dy*0.5 )
                             tauxy[i,j] =     mu[i,j]*(   (u2[i,j]-u2[i-1,j])/dx + (u1[i,j+1]-u1[i,j-1])/dy*0.5 )
-                        qx[i,j] = -kappa[i,j]*(T[i,j] - T[i-1,j])/dx
+                        qx[i,j] = qx[-2,j]#-kappa[i,j]*(T[i,j] - T[i-1,j])/dx
 
         elif direction == -1:
             for j in range(ny):
@@ -160,7 +174,7 @@ def origin2Conserve(ppt, rho, u1, u2, e, mu, kappa, direction):
                         else:                           # i=0, j=[1,-2]
                             tauxx[i,j] = 2/3*mu[i,j]*( 2*(u1[i+1,j]-u1[i,j])/dx - (u2[i,j+1]-u2[i,j-1])/dy*0.5 )
                             tauxy[i,j] =     mu[i,j]*(   (u2[i+1,j]-u2[i,j])/dx + (u1[i,j+1]-u1[i,j-1])/dy*0.5 )
-                        qx[i,j] = -kappa[i,j]*(T[i+1,j] - T[i,j])/dx
+                        qx[i,j] = qx[1,j]#-kappa[i,j]*(T[i+1,j] - T[i,j])/dx
         else:
             print("error direction vector detected.")
             sys.exit()
@@ -198,7 +212,7 @@ def origin2Conserve(ppt, rho, u1, u2, e, mu, kappa, direction):
                         else:                           # i=[1,-2], j=-1
                             tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j]-u2[i,j-1])/dy - (u1[i+1,j]-u1[i-1,j])/dx*0.5 )
                             tauyx[i,j] =     mu[i,j]*(   (u1[i,j]-u1[i,j-1])/dy + (u2[i+1,j]-u2[i-1,j])/dx*0.5 )
-                        qy[i,j] = -kappa[i,j]*(T[i,j] - T[i,j-1])/dy
+                        qy[i,j] = qy[i,-2]#-kappa[i,j]*(T[i,j] - T[i,j-1])/dy
 
         elif direction == -1:
             for i in range(nx):
@@ -224,7 +238,7 @@ def origin2Conserve(ppt, rho, u1, u2, e, mu, kappa, direction):
                         else:                           # i=[1,-2], j=0
                             tauyy[i,j] = 2/3*mu[i,j]*( 2*(u2[i,j+1]-u2[i,j])/dy - (u1[i+1,j]-u1[i-1,j])/dx*0.5 )
                             tauyx[i,j] =     mu[i,j]*(   (u1[i,j+1]-u1[i,j])/dy + (u2[i+1,j]-u2[i-1,j])/dx*0.5 )
-                        qy[i,j] = -kappa[i,j]*(T[i,j+1] - T[i,j])/dy
+                        qy[i,j] = qy[i,1]#-kappa[i,j]*(T[i,j+1] - T[i,j])/dy
         else:
             print("error direction vector detected.")
             sys.exit()
@@ -232,7 +246,7 @@ def origin2Conserve(ppt, rho, u1, u2, e, mu, kappa, direction):
         return tauyy, tauxy, qy
 
     T = e/ppt.cv
-    Et = rho*(e + np.sqrt(u1**2 + u2**2)/2)
+    Et = rho*(e + (u1**2 + u2**2)/2)
     p = rho*ppt.R*T
 
     U1 = rho
@@ -368,14 +382,32 @@ def tscheme(ppt, rho, u1, u2, e):
 
     return newU, dt
 
+def MDOT(rho, u1, dy):
+
+    inletSum = 0
+    outletSum = 0
+
+    for i in range(len(u1[0,:])):
+        inletSum += rho[0,i]*u1[0,i]*dy*1
+        outletSum += rho[-1,i]*u1[-1,i]*dy*1
+
+    dif = np.abs(inletSum - outletSum)/(inletSum+outletSum)*2
+    if dif <= 0.01:
+        print("Mass flux meets the requirements: ", dif)
+    else:
+        print("Mass flux not meets the requirements: ", dif)
+
+    return 0
+
 def postProgress(ppt, x, y, rho, u1, u2, e):
 
-    Ma = np.sqrt(u1**2 + u2**2)/2/np.sqrt(ppt.gamma*ppt.R*e/ppt.cv)
+    Ma = np.sqrt(u1**2 + u2**2)/np.sqrt(ppt.gamma*ppt.R*e/ppt.cv)
+    p = rho*ppt.R*e/ppt.cv
 
     def drawData(x, y, data, name, start, end):
         plt.figure()
-        fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
-        pic = plt.contourf(x,y,data,alpha=0.8,cmap='jet',levels=np.linspace(start,end,100))
+        # fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
+        pic = plt.contourf(x,y,data,alpha=0.8,cmap='jet')#,levels=np.linspace(start,end,50)
         # plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
         plt.colorbar(pic)
         plt.xlabel('x (m)')
@@ -385,11 +417,12 @@ def postProgress(ppt, x, y, rho, u1, u2, e):
         plt.show()
         return
 
-    drawData(x, y, u1.T, 'u1', -0.1*ppt.Uin, 5*ppt.Uin)
-    drawData(x, y, u2.T, 'u2', -0.1*ppt.Uin, 5*ppt.Uin)
-    drawData(x, y, Ma.T, 'Ma', 0, 1.5*ppt.MaIn)
-    drawData(x, y, rho.T, 'rho', 0.5, 5.0)
-    drawData(x, y, e.T/ppt.cv, 'T', 200, 300)
+    # drawData(x, y, u1.T, 'u1', -0.1*ppt.Uin, 5*ppt.Uin)
+    # drawData(x, y, u2.T, 'u2', -0.1*ppt.Uin, 5*ppt.Uin)
+    drawData(x, y, p.T, 'Pressure', np.min(p), np.max(p))
+    drawData(x, y, e.T/ppt.cv, 'Temperature', np.min(e.T/ppt.cv), np.max(e.T/ppt.cv))
+    drawData(x, y, rho.T, 'rho', np.min(rho), np.max(rho))
+    drawData(x, y, Ma.T, 'Mach number', np.min(Ma), np.max(Ma))
 
     return 0
 
@@ -405,22 +438,19 @@ def main():
         t += dt
         newRho, newu1, newu2, newe = conserve2Origin(newU)
 
-        if iterNumb%10 == 0:
-            print("iteration times: ", iterNumb)
-            residual = resiCalc(ppt, rho, newRho, dt)
-            print("residual: ", residual)
+        flag = converge(ppt, rho, newRho, dt, iterNumb)
 
-        if iterNumb == 100:       # conditional exit
+        if flag == 1:
+            print("Calculation converged.")
             break
-
-        # if residual <= 1e-5:       # convergent exit
-        #     break
-        if (iterNumb >= ppt.tn*2): # defensive exit
+        elif flag == 2:
+            print("Reach maximum iteration times")
             break
 
         iterNumb += 1
         rho, u1, u2, e = newRho, newu1, newu2, newe
 
+    MDOT(rho, u1, ppt.dy())
     postProgress(ppt, x, y, rho, u1, u2, e)
 
     return 0
