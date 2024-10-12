@@ -189,8 +189,8 @@ def postProgress(u1, u2, inu2, outu2, ps, x, y, u1colle):
         plt.colorbar(pic)
         plt.xlim(0, X[-1,0])
         plt.ylim(0, Y[0,-1])
-        plt.xlabel('x (m)')
-        plt.ylabel('y (m)')
+        plt.xlabel('x')
+        plt.ylabel('y')
         plt.title('Evolution of ' + name)
         # plt.savefig('G:/vorVel.png', bbox_inches='tight', dpi=512)  # , transparent=True
         plt.show()
@@ -218,6 +218,25 @@ def postProgress(u1, u2, inu2, outu2, ps, x, y, u1colle):
     # print("residual:", residual)
     return 0
 
+def postProgress2(u1, x, y):
+
+    outU1 = (u1[1:,:] + u1[:-1,:])*0.5
+
+    def drawData(x, y, data, name):
+        fig, ax = plt.subplots(figsize=(7, 5))  # 图片尺寸
+        pic = plt.contourf(x,y,data,alpha=0.8,cmap='jet',levels=np.linspace(np.min(outU1),np.max(outU1),101))#,levels=np.linspace(start,end,50)
+        # plt.plot(x, Ma, '-o', linewidth=1.0, color='black', markersize=1)
+        plt.colorbar(pic)
+        plt.xlabel('x', fontsize=20)
+        plt.ylabel('y', fontsize=20)
+        plt.title(name, fontsize=20)
+        plt.show()
+        return
+
+    drawData(x, y, outU1.T, 'u1')
+
+    return 0
+
 def main():
 
     x, y, dt, u1, u2, inu2, outu2, ps, pp, rho, mu, U = init()
@@ -242,7 +261,9 @@ def main():
                 u1colle = np.append(u1colle, u1[10,:][np.newaxis, :], axis=0)
                 break
 
-    postProgress(u1, u2, inu2, outu2, ps, x, y, u1colle)
+    # postProgress(u1, u2, inu2, outu2, ps, x, y, u1colle)
+
+    postProgress2(u1, x, y)
 
     # postProgress(u1, u2, inu2, outu2, ps, x, y)
 

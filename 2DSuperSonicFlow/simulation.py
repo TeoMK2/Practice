@@ -46,7 +46,7 @@ class parameter:
         self.Cy = 0.6
         self.Nx = 71
         self.Ny = 71
-        self.tn = 10000  # Maximum iteration times
+        self.tn = 4000  # Maximum iteration times
 
         # Inlet condition
         self.pin = 101325.0 # N/m^2
@@ -419,10 +419,10 @@ def postProgress(ppt, x, y, rho, u1, u2, e):
 
     # drawData(x, y, u1.T, 'u1', -0.1*ppt.Uin, 5*ppt.Uin)
     # drawData(x, y, u2.T, 'u2', -0.1*ppt.Uin, 5*ppt.Uin)
-    drawData(x, y, p.T, 'Pressure', np.min(p), np.max(p))
+    # drawData(x, y, p.T, 'Pressure', np.min(p), np.max(p))
     drawData(x, y, e.T/ppt.cv, 'Temperature', np.min(e.T/ppt.cv), np.max(e.T/ppt.cv))
-    drawData(x, y, rho.T, 'rho', np.min(rho), np.max(rho))
-    drawData(x, y, Ma.T, 'Mach number', np.min(Ma), np.max(Ma))
+    # drawData(x, y, rho.T, 'rho', np.min(rho), np.max(rho))
+    # drawData(x, y, Ma.T, 'Mach number', np.min(Ma), np.max(Ma))
 
     return 0
 
